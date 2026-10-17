@@ -277,6 +277,7 @@ pub fn export_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usiz
                 &[
                     "run",
                     "--rm",
+                    "--net=none",
                     &tb.image_tag,
                     "cat",
                     &format!("/usr/share/applications/{d}"),

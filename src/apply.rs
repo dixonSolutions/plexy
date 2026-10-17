@@ -212,6 +212,9 @@ pub fn run_bootc_install(m: &Manifest, plan: &Plan, opts: &ApplyOpts) -> Result<
     let mut args: Vec<String> = vec![
         "run",
         "--rm",
+        // The image is local; no network means no netavark/nftables either
+        // (Debian's podman without recommends has no nft binary).
+        "--net=none",
         "--privileged",
         "--pid=host",
         "--user=root:root",
