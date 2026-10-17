@@ -3,7 +3,7 @@ PASS  graphical session of alice on seat0
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/bluefin:ultra-desk
-        Digest: sha256:089d576ae13d9d00b84d72246624151381de156f598ff87f56538a17f36ce798 (amd64)
+        Digest: sha256:d2927cad0eddf395633c3bec3db170f2ae2e40d2c064993403d8985dc6b7cdda (amd64)
        Version: 44.20261013 (2026-10-13T01:49:54Z)
 PASS  user alice exists
 PASS  home of alice present (/home/alice)
@@ -13,6 +13,8 @@ PASS  file /var/home/alice/Documents/thesis.txt
 PASS  file /etc/dconf/db/local.d/00-plexy-test
 PASS  file /etc/gdm/custom.conf
 PASS  command cockpit-bridge
+PASS  as alice: nvim --version
+PASS  as alice: rg --version
 PASS  unit cockpit.socket enabled
 PASS  flatpak org.gnome.Calculator
 PASS  /etc/gdm/custom.conf contains 'AutomaticLogin=alice'
@@ -21,4 +23,4 @@ PASS  no failed units
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
    firstboot: installed Flatpaks: org.videolan.VLC
-== 15 passed, 0 failed
+== 17 passed, 0 failed

@@ -3,7 +3,7 @@ PASS  graphical session of tester on seat0
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/bluefin:ubu1
-        Digest: sha256:41f3d625f7aeeb237cfa52a71bda822799e899561aceeab54e242382a952270e (amd64)
+        Digest: sha256:7c1c4c225170ba32853880b901b508f3527b2f1461a02f528ad84dbf52db4e5c (amd64)
        Version: 44.20261013 (2026-10-13T01:49:54Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
@@ -12,14 +12,16 @@ PASS  tester in group wheel
 PASS  file /etc/tmux.conf
 PASS  file /var/home/tester/Documents/notes.txt
 PASS  command nginx
+PASS  as tester: nvim --version
+PASS  as tester: rg --version
 PASS  unit nginx.service active
 PASS  unit gdm.service active
 PASS  unit sshd.service active
 PASS  flatpak org.mozilla.firefox
 PASS  /etc/gdm/custom.conf contains 'AutomaticLogin=tester'
 PASS  no failed units
-   SELinux: Enforcing, AVC denials this boot: 9
+   SELinux: Enforcing, AVC denials this boot: 12
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
    firstboot: installed Flatpaks: org.mozilla.firefox
-== 16 passed, 0 failed
+== 18 passed, 0 failed
