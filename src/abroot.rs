@@ -148,6 +148,18 @@ fn data_size_mib() -> u64 {
 
 /// Create the ABRoot partitions. `spec` is a whole disk to dedicate
 /// (`/dev/vdb`) or `free:/dev/vda` to use unpartitioned space on a disk.
+/// Shell run in root A to build the initramfs for `kver`; exits non-zero
+/// (with update-initramfs's own output) when that fails.
+fn initramfs_script(kver: &str) -> String {
+    let k = util::shq(kver);
+    format!(
+        "lpkg --unlock >/dev/null 2>&1; rc=0; \
+         if [ -e /boot/initrd.img-{k} ]; then update-initramfs -u -k {k} || rc=$?; \
+         else update-initramfs -c -k {k} || rc=$?; fi; \
+         lpkg --lock >/dev/null 2>&1; exit $rc"
+    )
+}
+
 /// Volume groups to deactivate before wiping `devs` (a disk and its
 /// partitions), from `pvs -o pv_name,vg_name` output. A volume group that
 /// also lives on another disk is an error: wiping would destroy it.
@@ -608,10 +620,9 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .max()
         .context("no kernel in the image")?;
-    chroot(
-        &a,
-        "lpkg --unlock >/dev/null 2>&1; if ls /boot/initrd.img-* >/dev/null 2>&1; then update-initramfs -u -k all; else update-initramfs -c -k all; fi; lpkg --lock >/dev/null 2>&1; true",
-    )?;
+    // Name the kernel: `-k all` finds kernels through /var/lib/initramfs-tools,
+    // and root A's /var is the new, empty vos-var volume.
+    chroot(&a, &initramfs_script(&kver))?;
     for e in fs::read_dir(a.join("boot"))?.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         if ["vmlinuz", "initrd.img", "config-", "System.map"]
@@ -800,6 +811,16 @@ fn copy_data(a: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initramfs_for_the_named_kernel() {
+        let s = initramfs_script("7.1.3+deb14-amd64");
+        assert!(
+            s.contains("update-initramfs -c -k '7.1.3+deb14-amd64'")
+                || s.contains("update-initramfs -c -k 7.1.3+deb14-amd64")
+        );
+        assert!(!s.contains("-k all") && s.ends_with("exit $rc"));
+    }
 
     #[test]
     fn release_only_vgs_on_the_disk() {
