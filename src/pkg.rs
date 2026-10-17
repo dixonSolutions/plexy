@@ -593,12 +593,30 @@ fn scan_rpm_ostree() -> Result<Inventory> {
             inv.removed_from_base = arr("requested-base-removals");
         }
     }
+    // A system plexy migrated runs a derived image: what plexy layered is
+    // part of the image, not an rpm-ostree layer, so read plexy's own plan.
+    let known: BTreeSet<String> = inv.user_installed.iter().map(|u| u.name.clone()).collect();
+    for n in layered_by_previous_plexy(Path::new("/var/lib/plexy/plan.json")) {
+        if inv.installed.contains_key(&n) && !known.contains(&n) {
+            inv.user_installed.push(UserPkg {
+                name: n,
+                evidence: "layered by plexy".into(),
+            });
+        }
+    }
     // On ostree, /usr/etc holds the image defaults: diff /etc against it.
     let usr_etc = Path::new("/usr/etc");
     if usr_etc.exists() {
         walk_etc_diff(Path::new("/etc"), usr_etc, &mut inv);
     }
     Ok(inv)
+}
+
+/// Packages an earlier plexy migration layered into the derived image.
+fn layered_by_previous_plexy(plan: &Path) -> Vec<String> {
+    crate::plan::load(plan)
+        .map(|p| p.names_for(crate::plan::Dest::Image))
+        .unwrap_or_default()
 }
 
 fn walk_etc_diff(etc: &Path, usr_etc: &Path, inv: &mut Inventory) {
