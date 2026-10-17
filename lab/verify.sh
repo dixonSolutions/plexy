@@ -13,6 +13,7 @@
 #   EXPECT_GREP      "file:pattern" pairs (config content survived)
 #   EXPECT_WAITFILE  wait (up to 15 min) for this file first (e.g. first-login done)
 #   EXPECT_USERCMDS  user:command:args run as that user in a login shell
+#   EXPECT_SESSION   user who must have a graphical session on seat0 (autologin works)
 pass=0 fail=0
 ok() { pass=$((pass + 1)); printf 'PASS  %s\n' "$*"; }
 ko() { fail=$((fail + 1)); printf 'FAIL  %s\n' "$*"; }
@@ -23,6 +24,11 @@ if [ -n "$EXPECT_WAITFILE" ]; then
 fi
 . /etc/os-release
 echo "== $PRETTY_NAME (kernel $(uname -r))"
+if [ -n "$EXPECT_SESSION" ]; then
+  # autologin: wait up to 2 min for the user's session on seat0
+  i=0; while ! loginctl list-sessions --no-legend | awk '$4 == "seat0" {print $3}' | grep -qx "$EXPECT_SESSION" && [ $i -lt 24 ]; do sleep 5; i=$((i + 1)); done
+  chk "graphical session of $EXPECT_SESSION on seat0" sh -c "loginctl list-sessions --no-legend | awk '\$4 == \"seat0\" {print \$3}' | grep -qx '$EXPECT_SESSION'"
+fi
 [ -n "$EXPECT_OS" ] && case "$PRETTY_NAME $NAME $VARIANT" in *"$EXPECT_OS"*) ok "os is $EXPECT_OS" ;; *) ko "os is $EXPECT_OS (got $PRETTY_NAME)" ;; esac
 if [ -e /run/ostree-booted ]; then ok "booted from an ostree/bootc deployment"; fi
 if command -v abroot >/dev/null 2>&1 && findmnt -n / | grep -q vos-; then ok "booted from an ABRoot root"; fi
