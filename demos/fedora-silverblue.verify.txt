@@ -2,8 +2,8 @@
 PASS  os is Silverblue
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/silverblue:fed1
-        Digest: sha256:0faec3d85872f6b875f707879222818cf02255c5e928e3ac15b674fc4aaee663 (amd64)
-       Version: 44.20261017.0 (2026-10-17T05:16:24Z)
+        Digest: sha256:83e2f6a34f00b44318fca60d7ad63ed6c4a7cb4cecf79bc7ae28dd5100b336af (amd64)
+       Version: 44.20261017.0 (2026-10-17T06:47:39Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
 PASS  password hash of tester carried
@@ -23,3 +23,4 @@ PASS  no failed units
    firstboot: Plexy migration to quay.io/fedora/fedora-silverblue:44 completed first boot.
    firstboot: system dconf databases rebuilt
 == 17 passed, 0 failed
+FEDORA-E2E-EXIT=0
