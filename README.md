@@ -159,6 +159,7 @@ is guaranteed.**
 | Ubuntu 26.04 GNOME (ext4, apt, nginx/tmux/neovim, Firefox snap) | Bluefin | hybrid | **16/16**² (cross-family: deb → rpm) | [cast](demos/ubuntu-bluefin.cast) · [gif](demos/ubuntu-bluefin.gif) · [verify](demos/ubuntu-bluefin.verify.txt) · [desktop](demos/ubuntu-bluefin-desktop.png) |
 | Ultramarine 44 GNOME, as above | Bluefin | toolbox | **11/11**³ (506 packages in a Fedora toolbox) | [cast](demos/ultramarine-bluefin-toolbox.cast) · [gif](demos/ultramarine-bluefin-toolbox.gif) · [verify](demos/ultramarine-bluefin-toolbox.verify.txt) |
 | Ubuntu 26.04 GNOME, second disk | Vanilla OS 3.0 (ABRoot A/B) | image | **15/15** (incl. GDM autologin session) | [cast](demos/ubuntu-vanilla.cast) · [gif](demos/ubuntu-vanilla.gif) · [verify](demos/ubuntu-vanilla.verify.txt) |
+| Debian 13 cloud (ext4, apt, nginx/tmux/neovim/ripgrep) | Bluefin | hybrid | **15/15** (cross-family: deb → rpm) | [cast](demos/debian-bluefin.cast) · [gif](demos/debian-bluefin.gif) · [verify](demos/debian-bluefin.verify.txt) |
 
 ¹ alice's migrated password unlocks her session; her dconf (dark mode, enabled extensions) applies;
 VLC (an RPM Fusion package) runs as `org.videolan.VLC`; `nvim` and `rg` were installed by Homebrew at

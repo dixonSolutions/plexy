@@ -1,0 +1,23 @@
+== Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+PASS  os is Bluefin
+PASS  booted from an ostree/bootc deployment
+● Booted image: containers-storage:localhost/plexy/bluefin:deb1
+        Digest: sha256:11f3071b8b58b7e14c36420db4391ae86d54b6e2a7803635f60044747e952abf (amd64)
+       Version: 44.20261013 (2026-10-13T01:49:54Z)
+PASS  user tester exists
+PASS  home of tester present (/home/tester)
+PASS  password hash of tester carried
+PASS  tester in group wheel
+PASS  file /var/home/tester/projects/note.txt
+PASS  file /etc/tmux.conf
+PASS  command nginx
+PASS  command htop
+PASS  command tmux
+PASS  unit nginx.service active
+PASS  unit sshd.service active
+PASS  /etc/tmux.conf contains 'mouse'
+PASS  no failed units
+   SELinux: Enforcing, AVC denials this boot: 18
+   firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
+   firstboot: system dconf databases rebuilt
+== 15 passed, 0 failed
