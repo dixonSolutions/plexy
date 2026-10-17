@@ -103,11 +103,61 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
             "root is on LUKS: Debian-family systems unlock it from crypttab in the initramfs; plexy adds rd.luks.uuid= so the new initramfs can unlock it",
         );
     }
-    let free = try_run("df", &["--output=avail", "-B1", "/"])
+    require_free_root(
+        deploy_room(image_size(&opts.image)),
+        "the new system image needs room next to the old one",
+    )
+}
+
+const GIB: u64 = 1024 * 1024 * 1024;
+/// Room `bootc install to-existing-root` needs on / for the new deployment.
+pub const MIN_FREE_FOR_IMAGE: u64 = 12 * GIB;
+/// Extra room a toolbox build needs while it runs: the built image plus its
+/// `podman save` archive, before the image is removed again.
+pub const TOOLBOX_BUILD_HEADROOM: u64 = 4 * GIB;
+
+/// Room the ostree deployment of an image needs on /: about its unpacked
+/// size again (plus 20 %), never less than [`MIN_FREE_FOR_IMAGE`].
+pub fn deploy_room(image_bytes: Option<u64>) -> u64 {
+    image_bytes.map_or(MIN_FREE_FOR_IMAGE, |b| (b + b / 5).max(MIN_FREE_FOR_IMAGE))
+}
+
+/// Free space on / needed before building, so a migration that cannot fit
+/// fails in seconds instead of after a long image build. `target_bytes` is
+/// the size of the target image when it is already in container storage.
+pub fn required_free_before_build(target_bytes: Option<u64>, has_toolbox: bool) -> u64 {
+    deploy_room(target_bytes)
+        + if has_toolbox {
+            TOOLBOX_BUILD_HEADROOM
+        } else {
+            0
+        }
+}
+
+/// Unpacked size of an image in local container storage, if it is there.
+pub fn image_size(image: &str) -> Option<u64> {
+    try_run(
+        "podman",
+        &["image", "inspect", "--format", "{{.Size}}", image],
+    )
+    .and_then(|o| o.trim().parse().ok())
+}
+
+pub fn free_on_root() -> u64 {
+    try_run("df", &["--output=avail", "-B1", "/"])
         .and_then(|o| o.lines().nth(1).and_then(|l| l.trim().parse::<u64>().ok()))
-        .unwrap_or(u64::MAX);
-    if free < 12 * 1024 * 1024 * 1024 {
-        bail!("less than 12 GiB free on /: the new system image needs room next to the old one");
+        .unwrap_or(u64::MAX)
+}
+
+pub fn require_free_root(need: u64, why: &str) -> Result<()> {
+    let free = free_on_root();
+    if free < need {
+        bail!(
+            "{:.1} GiB free on /, {:.1} GiB needed: {why}. Free space (e.g. `podman image prune`, \
+             `dnf clean all` / `apt clean`) and re-run",
+            free as f64 / GIB as f64,
+            need as f64 / GIB as f64
+        );
     }
     Ok(())
 }
@@ -1281,6 +1331,16 @@ fn backup_boot() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn free_space_budget() {
+        let g = 1024 * 1024 * 1024u64;
+        assert_eq!(deploy_room(None), MIN_FREE_FOR_IMAGE);
+        assert_eq!(deploy_room(Some(4 * g)), MIN_FREE_FOR_IMAGE);
+        assert_eq!(deploy_room(Some(15 * g)), 18 * g);
+        assert_eq!(required_free_before_build(None, true), 16 * g);
+        assert_eq!(required_free_before_build(Some(15 * g), false), 18 * g);
+    }
+
     use super::*;
 
     #[test]

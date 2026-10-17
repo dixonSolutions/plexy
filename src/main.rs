@@ -277,6 +277,16 @@ fn real_main(cli: Cli) -> Result<()> {
             review_or_print(&mut p, yes)?;
             let dir = PathBuf::from("/var/lib/plexy/plan");
             write_plan_dir(&m, &p, &dir, t.customize.as_deref())?;
+            if p.backend == target::Backend::Bootc {
+                // The new deployment lands on the same filesystem as the old one.
+                apply::require_free_root(
+                    apply::required_free_before_build(
+                        apply::image_size(&p.target_image),
+                        p.toolbox.is_some(),
+                    ),
+                    "building the images and installing the new system next to the old one",
+                )?;
+            }
             build_all(&p, &dir)?;
             confirm_destructive(&p, yes)?;
             do_apply(&m, &p, &dir, reboot, allow_esp_wipe, abroot_disk)?;
@@ -743,6 +753,8 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
             "building toolbox image {} from {}",
             tb.image_tag, tb.base_image
         ));
+        let base_was_present =
+            util::try_run("podman", &["image", "exists", &tb.base_image]).is_some();
         build::podman_build(&dir.join("toolbox"), &tb.image_tag)?;
         let staging = Path::new("/var/lib/plexy/staging");
         fs::create_dir_all(staging)?;
@@ -759,6 +771,13 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
                 &tb.image_tag,
             ],
         )?;
+        // First login loads the toolbox from the archive. Keeping the image in
+        // container storage as well doubles its footprint on /, which is the
+        // room the new deployment needs.
+        let _ = util::try_run("podman", &["rmi", &tb.image_tag]);
+        if !base_was_present {
+            let _ = util::try_run("podman", &["rmi", &tb.base_image]);
+        }
     }
     Ok(())
 }
