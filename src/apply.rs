@@ -61,7 +61,8 @@ struct DataLayout {
     home_mounted: bool,
 }
 
-pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
+/// `flatpak_apps`: Flatpaks first boot will install.
+pub fn preflight(m: &Manifest, opts: &ApplyOpts, flatpak_apps: usize) -> Result<()> {
     if !util::is_root() {
         bail!("plexy apply must run as root");
     }
@@ -113,8 +114,11 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
         0
     };
     require_free_root(
-        deploy_room(image_size(&opts.image)) + toolbox,
-        "the new system image needs room next to the old one, and first login unpacks the toolbox",
+        deploy_room(image_size(&opts.image))
+            + toolbox
+            + flatpak_apps as u64 * FLATPAK_PER_APP
+            + FIRST_BOOT_MARGIN,
+        "the new system image needs room next to the old one, first boot installs Flatpaks and first login unpacks the toolbox",
     )
 }
 
@@ -123,9 +127,17 @@ const GIB: u64 = 1024 * 1024 * 1024;
 pub const MIN_FREE_FOR_IMAGE: u64 = 12 * GIB;
 /// Room a toolbox needs per package routed to it: the compressed archive
 /// plus what a user's first login unpacks. Measured: 506 Ultramarine
-/// packages, 2.0 GB archive, 5.4 GB unpacked: ~15 MB each, 16 with margin.
-pub const TOOLBOX_PER_PACKAGE: u64 = 16 * 1024 * 1024;
+/// packages, 2.0 GB archive, 5.4 GB unpacked: ~15 MB each; 20 covers what
+/// the build leaves in staging.
+pub const TOOLBOX_PER_PACKAGE: u64 = 20 * 1024 * 1024;
 pub const TOOLBOX_MIN_ROOM: u64 = 4 * GIB;
+/// Room per Flatpak first boot installs (snap and package replacements):
+/// a new app usually brings a runtime. VLC with its KDE runtime ~1.4 GB.
+pub const FLATPAK_PER_APP: u64 = 3 * GIB / 2;
+/// What the new system itself writes at first boot that plexy does not
+/// control: Bluefin's flatpak-preinstall.service put 2.6 GB of apps and
+/// runtimes on the Ultramarine guest, journals and caches come on top.
+pub const FIRST_BOOT_MARGIN: u64 = 2 * GIB;
 
 /// Room the ostree deployment of an image needs on /. Measured: a 7.4 GB
 /// Bluefin image became a 6.8 GB ostree repo, so 1.1x its size leaves some
@@ -152,12 +164,16 @@ pub fn toolbox_unpack_room(unpacked: Option<u64>, archive_bytes: u64) -> u64 {
 /// fails in seconds instead of after a long image build. `target_bytes` is
 /// the size of the target image when it is already in container storage;
 /// `toolbox_pkgs` the number of packages going into a toolbox (0: none).
-pub fn required_free_before_build(target_bytes: Option<u64>, toolbox_pkgs: usize) -> u64 {
+pub fn required_free_before_build(
+    target_bytes: Option<u64>,
+    toolbox_pkgs: usize,
+    flatpak_apps: usize,
+) -> u64 {
     let toolbox = match toolbox_pkgs {
         0 => 0,
         n => (n as u64 * TOOLBOX_PER_PACKAGE).max(TOOLBOX_MIN_ROOM),
     };
-    deploy_room(target_bytes) + toolbox
+    deploy_room(target_bytes) + toolbox + flatpak_apps as u64 * FLATPAK_PER_APP + FIRST_BOOT_MARGIN
 }
 
 /// Unpacked size of an image in local container storage, if it is there.
@@ -1209,7 +1225,7 @@ fn install_hooks(plan: &Plan, deploy: &Path, new_var: &Path, staging: &Path) -> 
 // -------------------------------------------------------------------- run ---
 
 pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) -> Result<()> {
-    preflight(m, opts)?;
+    preflight(m, opts, plan.flatpaks_to_install.len())?;
     backup_boot()?;
     run_bootc_install(m, plan, opts)?;
     let (deploy, stateroot_var) = if util::dry_run() {
@@ -1386,9 +1402,10 @@ mod tests {
         assert_eq!(deploy_room(None), MIN_FREE_FOR_IMAGE);
         assert_eq!(deploy_room(Some(10 * g)), 11 * g);
         assert_eq!(deploy_room(Some(20 * g)), 22 * g);
-        assert_eq!(required_free_before_build(None, 10), 16 * g);
-        assert_eq!(required_free_before_build(None, 512), 20 * g);
-        assert_eq!(required_free_before_build(Some(20 * g), 0), 22 * g);
+        assert_eq!(required_free_before_build(None, 10, 0), 18 * g);
+        assert_eq!(required_free_before_build(None, 512, 0), 24 * g);
+        assert_eq!(required_free_before_build(Some(20 * g), 0, 0), 24 * g);
+        assert_eq!(required_free_before_build(Some(20 * g), 0, 2), 27 * g);
         assert_eq!(toolbox_unpack_room(None, 10 * g), 33 * g);
         assert_eq!(toolbox_unpack_room(Some(10 * g), 2 * g), 11 * g);
     }

@@ -287,6 +287,7 @@ fn real_main(cli: Cli) -> Result<()> {
                         } else {
                             0
                         },
+                        p.flatpaks_to_install.len(),
                     ),
                     "building the images and installing the new system next to the old one",
                 )?;
