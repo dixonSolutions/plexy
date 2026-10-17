@@ -543,8 +543,17 @@ fn package_files(
     // Meta-packages (cockpit, ubuntu-restricted-addons, ...) ship nothing that
     // says what they are (only docs, icons, metadata): classify them by what
     // their direct dependencies ship.
+    // Only user-installed packages: preinstalled trait-less packages are
+    // libraries and data, and expanding thousands of them costs minutes.
+    let user: BTreeSet<&str> = m
+        .packages
+        .user_installed
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
     let meta: Vec<String> = want
         .iter()
+        .filter(|n| user.contains(**n))
         .filter(|n| {
             let t = plan::classify_files(out.get(**n).map(String::as_str).unwrap_or(""));
             !t.cli && !t.gui && !t.host_level && t.desktop_files.is_empty()
