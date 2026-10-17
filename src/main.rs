@@ -769,10 +769,22 @@ fn confirm_destructive(p: &plan::Plan, yes: bool) -> Result<()> {
         "  About to replace the operating system with {} ({:?} backend).",
         p.target_image, p.backend
     );
-    println!(
-        "  /boot and the EFI boot entries will be rewritten; data, accounts and settings are carried over."
-    );
-    println!("  A backup of /boot and the ESP is written to /var/lib/plexy/backup.");
+    match p.backend {
+        target::Backend::Bootc => {
+            println!(
+                "  /boot and the EFI boot entries will be rewritten; data, accounts and settings are carried over."
+            );
+            println!(
+                "  A backup of /boot and the ESP is written to /var/lib/plexy/backup (`plexy rollback` uses it)."
+            );
+        }
+        target::Backend::Abroot => {
+            println!(
+                "  New ABRoot volumes are created on the disk you named (its contents are erased);"
+            );
+            println!("  this system is left untouched and stays bootable from the firmware menu.");
+        }
+    }
     if yes {
         return Ok(());
     }

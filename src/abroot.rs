@@ -109,6 +109,18 @@ fn part_dev(disk: &str, n: u32) -> String {
     }
 }
 
+/// sfdisk script lines for the three ABRoot partitions (key=value syntax;
+/// sfdisk rejects positional fields mixed with name=). `var_mib` None = rest.
+fn sfdisk_parts(var_mib: Option<u64>) -> String {
+    let var = match var_mib {
+        Some(m) => format!("size={m}MiB, "),
+        None => String::new(),
+    };
+    format!(
+        "size={BOOT_MIB}MiB, type=linux, name=vos-boot\nsize={ROOT_PV_MIB}MiB, type=lvm, name=vos-root\n{var}type=linux, name=vos-var\n"
+    )
+}
+
 /// Free regions on a disk (start, size) in MiB, as reported by sfdisk.
 fn free_regions(disk: &str) -> Vec<(u64, u64)> {
     let out = try_run("sfdisk", &["--list-free", "--bytes", disk]).unwrap_or_default();
@@ -164,9 +176,7 @@ pub fn partition(spec: &str) -> Result<Layout> {
         step(format!(
             "partitioning {disk} for ABRoot (vos-boot, vos-root LVM, vos-var)"
         ));
-        let script = format!(
-            "label: gpt\n,{BOOT_MIB}MiB,L,name=vos-boot\n,{ROOT_PV_MIB}MiB,E6D6D379-F507-44C2-A23C-238F2A3DF928,name=vos-root\n,,L,name=vos-var\n"
-        );
+        let script = format!("label: gpt\n{}", sfdisk_parts(None));
         if !util::dry_run() {
             util::run_stdin(
                 "sfdisk",
@@ -197,9 +207,7 @@ pub fn partition(spec: &str) -> Result<Layout> {
     step(format!(
         "creating ABRoot partitions in free space on {disk}"
     ));
-    let script = format!(
-        ",{BOOT_MIB}MiB,L,name=vos-boot\n,{ROOT_PV_MIB}MiB,E6D6D379-F507-44C2-A23C-238F2A3DF928,name=vos-root\n,{need_var}MiB,L,name=vos-var\n"
-    );
+    let script = sfdisk_parts(Some(need_var));
     if !util::dry_run() {
         util::run_stdin("sfdisk", &["--append", "--no-reread", &disk], &script)?;
         let _ = try_run("partx", &["-a", &disk]);
@@ -733,6 +741,15 @@ fn copy_data(a: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sfdisk_script() {
+        let s = sfdisk_parts(None);
+        assert!(s.starts_with("size=1024MiB, type=linux, name=vos-boot\n"));
+        assert!(s.contains("type=lvm, name=vos-root"));
+        assert!(s.ends_with("type=linux, name=vos-var\n"));
+        assert!(sfdisk_parts(Some(30000)).contains("size=30000MiB, type=linux, name=vos-var"));
+    }
 
     #[test]
     fn partition_device_names() {
