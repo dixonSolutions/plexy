@@ -32,7 +32,7 @@ VM[ultramarine-bluefin-toolbox]=ultra1
 ARGS[ultramarine-bluefin-toolbox]="--target bluefin --mode toolbox"
 EXPECT[ultramarine-bluefin-toolbox]='EXPECT_OS=Bluefin EXPECT_USERS=alice EXPECT_GROUPS=alice:wheel
 EXPECT_FILES="/var/home/alice/Documents/thesis.txt" EXPECT_ENABLED="cockpit.socket"
-EXPECT_WAITFILE=/var/home/alice/.local/state/plexy/firstlogin.done
+EXPECT_WAITFILE="/var/lib/plexy/layer.done /var/home/alice/.local/state/plexy/firstlogin.done"
 EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version"'
 
 VM[ubuntu-bluefin]=ubu1
@@ -79,12 +79,13 @@ EXPECT_OUTPUT[ultra40-refusal]='GiB needed'
 VM[debian-cleanup]=deb1
 VM[ultramarine-export]=ultra1
 VM[ultramarine-bluefin-reboot]=ultra1
+VM[silverblue-bluefin-reboot]=fed1
 
 # silverblue-bluefin: run right after fedora-silverblue. Starts from an
 # image-based OS and moves it to another image with `plexy switch`.
 VM[silverblue-bluefin]=fed1
 ARGS[silverblue-bluefin]="--target bluefin"
-EXPECT[silverblue-bluefin]='EXPECT_BOOTED_IMAGE=ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[silverblue-bluefin]='EXPECT_WAITFILE=/var/lib/plexy/layer.done EXPECT_ORIGIN=ostree-unverified-registry:ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 
@@ -115,6 +116,17 @@ if [[ $scenario == debian-cleanup ]]; then
     L_VERIFY
     exit
 fi
+if [[ $scenario == silverblue-bluefin-reboot ]]; then
+    # Second boot after a two-step switch: the signed rebase staged by plexy layer.
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'test -e /var/lib/plexy/layer.done' || { echo "$vm: plexy layer has not run: run silverblue-bluefin first" >&2; exit 1; }
+    "$L" ssh "$vm" 'systemctl reboot' || true
+    sleep 30
+    "$L" wait "$vm" 900
+    EXPECT[$scenario]='EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_CMDS="htop tmux nginx" EXPECT_USERS=tester EXPECT_FILES=/var/home/tester/projects/note.txt'
+    L_VERIFY
+    exit
+fi
 if [[ $scenario == ultramarine-bluefin-reboot ]]; then
     # After layering, the signed rebase is staged for the next boot.
     "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
@@ -129,7 +141,7 @@ fi
 if [[ $scenario == ultramarine-export ]]; then
     "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
     "$L" ssh "$vm" 'test -e /run/ostree-booted' || { echo "$vm is not migrated: run ultramarine-bluefin-toolbox first" >&2; exit 1; }
-    "$L" ssh "$vm" 'rm -f /var/home/alice/.local/bin/rg; su - alice -c "plexy export"' | tee "$LAB/run/$scenario.out.log"
+    "$L" ssh "$vm" 'rm -f /var/home/alice/.local/bin/rg; su - alice -c "plexy export"' 2>&1 | tee "$LAB/run/$scenario.out.log"
     grep -qE '[0-9]+ apps/commands exported' "$LAB/run/$scenario.out.log" || { echo "plexy export reported nothing" >&2; exit 1; }
     EXPECT[$scenario]='EXPECT_OS=Bluefin EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version"'
     L_VERIFY
