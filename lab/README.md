@@ -55,6 +55,8 @@ swap. The kernel OOM-killed a guest mid-migration and several desktop apps. So:
 - Guests get `virtio-balloon` with free-page reporting, so memory the guest frees goes back to
   the host. qemu runs with `oom_score_adj=1000`, so under memory pressure a guest is killed first.
 - `e2e.sh` powers its guest off when the scenario ends, even when it fails. `KEEP=1` leaves the guest running.
+- Do not edit `lab/*.sh` while a scenario is running: bash reads a script as it executes it, so
+  a running `e2e.sh` resumes at the wrong place after a long step.
 - Run scenarios **one at a time**. Check `lab.sh mem` and `free -h` before you start one. On hosts where
   `/tmp` is tmpfs, never put build trees or VM images in `/tmp`.
 
@@ -70,6 +72,10 @@ swap. The kernel OOM-killed a guest mid-migration and several desktop apps. So:
 | `ultramarine-bluefin` | Ultramarine 44 GNOME + CLI tools, VLC (RPM Fusion), Cockpit, GNOME extension, dconf, Flatpak | `--target bluefin --mode hybrid` |
 | `ubuntu-bluefin` | Ubuntu 26.04 GNOME + nginx/tmux/neovim, Firefox snap | `--target bluefin --mode hybrid` |
 | `ubuntu-vanilla` | same, second disk | `--target vanilla --abroot-disk /dev/vdb` |
+| `ultramarine-bluefin-toolbox` | Ultramarine 44 GNOME, as above | `--target bluefin --mode toolbox` |
+| `silverblue-bluefin` | the Silverblue result of `fedora-silverblue` (already image-based) | `plexy switch --target bluefin` |
+| `debian-bluefin` | Debian 13 cloud + htop/nginx/tmux/neovim/ripgrep (prepare with `prep-debian.sh`) | `--target bluefin --mode hybrid` |
+| `fedora-rollback` | the migrated `fed1` | `plexy rollback` |
 
 Firmware note: `EDK2` in Homebrew's QEMU and GNOME Boxes both work; the guests boot via the
 removable-media path on first boot and through the entry bootc/ABRoot creates afterwards.

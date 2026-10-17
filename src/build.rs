@@ -23,9 +23,14 @@ fn install_cmd(family: Family, pkgs: &[String], tolerant: bool) -> String {
         Family::Debian => format!(
             "RUN (lpkg --unlock >/dev/null 2>&1 || true) && apt-get update && \\\n    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n        {list} && \\\n    rm -rf /var/lib/apt/lists/* && \\\n    (lpkg --lock >/dev/null 2>&1 || true)"
         ),
+        // Tolerant builds also ride out an unreachable third-party mirror.
         _ => format!(
-            "RUN dnf -y install --setopt=install_weak_deps=False --skip-unavailable{} \\\n        {list} && \\\n    dnf clean all",
-            if tolerant { " --skip-broken" } else { "" }
+            "RUN dnf -y install --setopt=install_weak_deps=False --setopt=retries=10 --skip-unavailable{} \\\n        {list} && \\\n    dnf clean all",
+            if tolerant {
+                " --skip-broken --setopt=skip_if_unavailable=True"
+            } else {
+                ""
+            }
         ),
     }
 }
@@ -164,19 +169,26 @@ pub fn toolbox_containerfile(m: &Manifest, plan: &Plan, ctx: &Path) -> Result<Op
 
 pub fn podman_build(ctx: &Path, tag: &str) -> Result<()> {
     info(format!("building {tag} from {}", ctx.display()));
-    util::run_visible(
-        "podman",
-        &[
-            "build",
-            "--pull=missing",
-            "--network=host",
-            "--security-opt",
-            "label=disable",
-            "-t",
-            tag,
-            &ctx.display().to_string(),
-        ],
-    )
+    let ctx = ctx.display().to_string();
+    let args = [
+        "build",
+        "--pull=missing",
+        "--network=host",
+        "--security-opt",
+        "label=disable",
+        "-t",
+        tag,
+        &ctx,
+    ];
+    // Builds download hundreds of packages; one network blip (a DNS miss, a
+    // mirror timeout) should not cost the whole run. Finished steps come from
+    // the layer cache, so the retry only repeats the step that failed.
+    if let Err(e) = util::run_visible("podman", &args) {
+        util::warn(format!("{e:#}; retrying once in 30 s"));
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        return util::run_visible("podman", &args);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

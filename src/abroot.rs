@@ -24,7 +24,7 @@ use crate::apply::{self, FIRSTBOOT_UNIT, FIRSTLOGIN_UNIT, merge_accounts, transl
 use crate::manifest::Manifest;
 use crate::plan::{ConfigAction, Dest, Plan, etc_translate};
 use crate::state::{parse_group, parse_passwd};
-use crate::util::{self, info, read_opt, root_join, run, step, try_run, write_file};
+use crate::util::{self, info, read_opt, root_join, run, step, try_run, warn, write_file};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -148,6 +148,64 @@ fn data_size_mib() -> u64 {
 
 /// Create the ABRoot partitions. `spec` is a whole disk to dedicate
 /// (`/dev/vdb`) or `free:/dev/vda` to use unpartitioned space on a disk.
+/// Volume groups to deactivate before wiping `devs` (a disk and its
+/// partitions), from `pvs -o pv_name,vg_name` output. A volume group that
+/// also lives on another disk is an error: wiping would destroy it.
+fn vgs_to_release(pvs: &str, devs: &[String]) -> Result<Vec<String>> {
+    let rows: Vec<(&str, &str)> = pvs
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            Some((f.next()?, f.next()?))
+        })
+        .collect();
+    let mut vgs: Vec<String> = Vec::new();
+    for (pv, vg) in &rows {
+        if devs.iter().any(|d| d == pv) && !vgs.iter().any(|v| v == vg) {
+            vgs.push(vg.to_string());
+        }
+    }
+    for vg in &vgs {
+        if let Some((pv, _)) = rows
+            .iter()
+            .find(|(pv, v)| v == vg && !devs.iter().any(|d| d == pv))
+        {
+            bail!("volume group {vg} spans this disk and {pv}; wiping the disk would destroy it");
+        }
+    }
+    Ok(vgs)
+}
+
+/// Make a disk we are about to wipe free of users we can safely stop: LVM
+/// volume groups left on it (e.g. by an interrupted migration) are
+/// deactivated. Swap in use is an error rather than silently turned off.
+fn release_disk(disk: &str) -> Result<()> {
+    let devs: Vec<String> = try_run("lsblk", &["-nlpo", "NAME", disk])
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let swaps = try_run("swapon", &["--show=NAME", "--noheadings"]).unwrap_or_default();
+    if let Some(sw) = swaps
+        .lines()
+        .map(str::trim)
+        .find(|s| devs.iter().any(|d| d == s))
+    {
+        bail!("{sw} on {disk} is in use as swap; run `swapoff {sw}` first");
+    }
+    let pvs = try_run("pvs", &["--noheadings", "-o", "pv_name,vg_name"]).unwrap_or_default();
+    for vg in vgs_to_release(&pvs, &devs)? {
+        warn(format!(
+            "deactivating volume group {vg} on {disk}, which is about to be wiped"
+        ));
+        if !util::dry_run() {
+            util::run("vgchange", &["-an", &vg])?;
+        }
+    }
+    Ok(())
+}
+
 pub fn partition(spec: &str) -> Result<Layout> {
     let (disk, whole) = match spec.strip_prefix("free:") {
         Some(d) => (d.to_string(), false),
@@ -173,6 +231,7 @@ pub fn partition(spec: &str) -> Result<Layout> {
         if size < need {
             bail!("{disk} is {size} MiB; ABRoot volumes plus your data need about {need} MiB");
         }
+        release_disk(&disk)?;
         step(format!(
             "partitioning {disk} for ABRoot (vos-boot, vos-root LVM, vos-var)"
         ));
@@ -741,6 +800,23 @@ fn copy_data(a: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_only_vgs_on_the_disk() {
+        let devs: Vec<String> = ["/dev/vdb", "/dev/vdb1", "/dev/vdb2", "/dev/vdb3"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let pvs = "  /dev/vdb2  vos-root\n  /dev/vda3  system\n";
+        assert_eq!(vgs_to_release(pvs, &devs).unwrap(), vec!["vos-root"]);
+        assert!(
+            vgs_to_release("  /dev/vda3 system\n", &devs)
+                .unwrap()
+                .is_empty()
+        );
+        let spans = "  /dev/vdb2 data\n  /dev/vdc1 data\n";
+        assert!(vgs_to_release(spans, &devs).is_err());
+    }
 
     #[test]
     fn sfdisk_script() {

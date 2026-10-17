@@ -49,6 +49,20 @@ EXPECT[ubuntu-vanilla]='EXPECT_OS=Vanilla EXPECT_USERS=tester EXPECT_GROUPS=test
 EXPECT_FILES="/etc/tmux.conf /home/tester/Documents/notes.txt" EXPECT_CMDS="htop nginx tmux" EXPECT_ACTIVE="nginx.service"
 EXPECT_GREP="/etc/gdm3/custom.conf:AutomaticLogin=tester"'
 
+VM[debian-bluefin]=deb1
+ARGS[debian-bluefin]="--target bluefin --mode hybrid"
+EXPECT[debian-bluefin]='EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="nginx htop tmux"
+EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
+
+# silverblue-bluefin: run right after fedora-silverblue. Starts from an
+# image-based OS and moves it to another image with `plexy switch`.
+VM[silverblue-bluefin]=fed1
+ARGS[silverblue-bluefin]="--target bluefin"
+EXPECT[silverblue-bluefin]='EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx"
+EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
+
 VM[fedora-rollback]=fed1
 EXPECT[fedora-rollback]='EXPECT_OS="Cloud Edition" EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx"
@@ -63,6 +77,28 @@ L_VERIFY() { "$L" scp "$vm" "$HERE/verify.sh" :/root/verify.sh
     "$L" ssh "$vm" "env ${EXPECT[$scenario]//$'\n'/ } sh /root/verify.sh" | tee "$LAB/run/$scenario.verify.log"; }
 
 # fedora-rollback: run on an already-migrated fed1: roll back, reboot, verify the old system.
+if [[ $scenario == silverblue-bluefin ]]; then
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'grep -qi silverblue /etc/os-release' ||
+        { echo "$vm is not on Silverblue: run fedora-silverblue first" >&2; exit 1; }
+    "$L" ssh "$vm" 'mkdir -p /var/mnt/host; mountpoint -q /var/mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /var/mnt/host
+        podman image exists ghcr.io/ublue-os/bluefin:stable || podman load -q -i /var/mnt/host/bluefin.tar'
+    cmd="/var/mnt/host/plexy switch ${ARGS[$scenario]} --yes && systemctl reboot"
+    port=$(cat "$LAB/run/$vm.port")
+    ssh_cmd="ssh -t -q -i $LAB/id_ed25519 -p $port -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1"
+    if [[ $record == --record ]]; then
+        mkdir -p "$HERE/../demos"
+        asciinema rec --overwrite -q -i 2 -c "$ssh_cmd '. /etc/os-release; echo \"# \$PRETTY_NAME -> plexy switch ${ARGS[$scenario]}\"; $cmd'" \
+            "$HERE/../demos/$scenario.cast" || true
+    else
+        $ssh_cmd "$cmd" || true
+    fi
+    sleep 40
+    "$L" wait "$vm" 900
+    L_VERIFY
+    "$L" screenshot "$vm" "$LAB/run/$scenario.png" >/dev/null || true
+    exit
+fi
 if [[ $scenario == fedora-rollback ]]; then
     # The previous scenario powered the migrated guest off; boot it again.
     "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
@@ -74,9 +110,18 @@ if [[ $scenario == fedora-rollback ]]; then
 fi
 "$L" kill "$vm" || true
 "$L" revert "$vm" "${SNAP[$scenario]:-loaded}"
+# qcow2 snapshots cover only the main disk; give the guest a blank second
+# disk again, or LVM finds the volumes an earlier run left on it.
+d2="$LAB/run/$vm.disk2.qcow2"
+if [[ -f $d2 && ${KEEP_DISK2:-} != 1 ]]; then
+    size=$(qemu-img info --output=json "$d2" | python3 -c 'import json,sys; print(json.load(sys.stdin)["virtual-size"])')
+    qemu-img create -q -f qcow2 "$d2" "$size"
+fi
 "$L" start "$vm"
 "$L" wait "$vm" 300
-"$L" ssh "$vm" 'mkdir -p /mnt/host; mountpoint -q /mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/host; install -m755 /mnt/host/plexy /usr/local/bin/plexy'
+"$L" ssh "$vm" 'mkdir -p /mnt/host; mountpoint -q /mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/host 2>/dev/null
+    install -m755 /mnt/host/plexy /usr/local/bin/plexy' ||
+    { "$L" scp "$vm" "$LAB/share/plexy" :/usr/local/bin/plexy && "$L" ssh "$vm" 'chmod 755 /usr/local/bin/plexy'; }
 
 cmd="plexy migrate ${ARGS[$scenario]} --yes --reboot"
 port=$(cat "$LAB/run/$vm.port")
