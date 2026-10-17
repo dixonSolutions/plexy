@@ -42,7 +42,9 @@ if [ -n "$EXPECT_ORIGIN" ]; then
   case "$org" in *"$EXPECT_ORIGIN"*) ok "origin $org" ;; *) ko "origin $EXPECT_ORIGIN (got $org)" ;; esac
 fi
 for pk in $EXPECT_LAYERED; do
-  chk "layered package $pk" sh -c "rpm-ostree status --json --booted | python3 -c 'import json,sys; d=json.load(sys.stdin)[\"deployments\"][0]; sys.exit(0 if \"$pk\" in d.get(\"requested-packages\",[])+d.get(\"packages\",[]) else 1)'"
+  # deployments[0] is the newest: with --apply-live the layers live in the
+  # pending deployment until the next boot.
+  chk "layered package $pk" sh -c "rpm-ostree status --json | python3 -c 'import json,sys; d=json.load(sys.stdin)[\"deployments\"][0]; sys.exit(0 if \"$pk\" in d.get(\"requested-packages\",[])+d.get(\"packages\",[]) else 1)'"
 done
 [ -f /var/lib/plexy/layer.log ] && sed 's/^/   layer: /' /var/lib/plexy/layer.log | tail -3
 if [ -n "$EXPECT_SESSION" ]; then
