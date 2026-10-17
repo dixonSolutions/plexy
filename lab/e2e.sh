@@ -129,12 +129,12 @@ if [[ $scenario == silverblue-bluefin ]]; then
         { echo "$vm is not on Silverblue: run fedora-silverblue first" >&2; exit 1; }
     "$L" ssh "$vm" 'mkdir -p /var/mnt/host; mountpoint -q /var/mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /var/mnt/host
         podman image exists ghcr.io/ublue-os/bluefin:stable || podman load -q -i /var/mnt/host/bluefin.tar'
-    cmd="/var/mnt/host/plexy switch ${ARGS[$scenario]} --yes && systemctl reboot"
+    cmd="/var/mnt/host/plexy switch ${ARGS[$scenario]:-} --yes && systemctl reboot"
     port=$(cat "$LAB/run/$vm.port")
     ssh_cmd="ssh -t -q -i $LAB/id_ed25519 -p $port -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1"
     if [[ $record == --record ]]; then
         mkdir -p "$HERE/../demos"
-        asciinema rec --overwrite -q -i 2 -c "$ssh_cmd '. /etc/os-release; echo \"# \$PRETTY_NAME -> plexy switch ${ARGS[$scenario]}\"; $cmd'" \
+        asciinema rec --overwrite -q -i 2 -c "$ssh_cmd '. /etc/os-release; echo \"# \$PRETTY_NAME -> plexy switch ${ARGS[$scenario]:-}\"; $cmd'" \
             "$HERE/../demos/$scenario.cast" || true
     else
         $ssh_cmd "$cmd" || true
@@ -175,12 +175,12 @@ fi
 if [[ -n ${NOREBOOT[$scenario]:-} ]]; then
     "$L" ssh "$vm" 'ls -la --time-style=+%s /boot /boot/efi 2>/dev/null | md5sum' >"$LAB/run/$scenario.boot.before"
 fi
-cmd=${CMD[$scenario]:-"plexy migrate ${ARGS[$scenario]} --yes --reboot"}
+cmd=${CMD[$scenario]:-"plexy migrate ${ARGS[$scenario]:-} --yes --reboot"}
 port=$(cat "$LAB/run/$vm.port")
 ssh_cmd="ssh -t -q -i $LAB/id_ed25519 -p $port -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1"
 if [[ $record == --record ]]; then
     mkdir -p "$HERE/../demos"
-    asciinema rec --overwrite -q -i 2 -c "$ssh_cmd '. /etc/os-release; echo \"# \$PRETTY_NAME -> plexy ${ARGS[$scenario]}\"; $cmd'" \
+    asciinema rec --overwrite -q -i 2 -c "$ssh_cmd '. /etc/os-release; echo \"# \$PRETTY_NAME -> plexy ${ARGS[$scenario]:-}\"; $cmd'" \
         "$HERE/../demos/$scenario.cast" || true
 else
     $ssh_cmd "$cmd" || true
