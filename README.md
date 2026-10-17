@@ -2,7 +2,7 @@
 
 **Turn the Linux you already have into an image-based ("immutable") system — in place — keeping your packages, configuration, users, services, desktop settings, Flatpaks, Homebrew and data.**
 
-Plexy (from *flexible*: the OS architecture flexes, your system doesn't break) reads a
+Plexy reads a
 traditional `dnf`- or `apt`-managed installation and rebuilds it on top of an atomic image:
 Bluefin, Aurora, Bazzite, Fedora Silverblue/Kinoite, any bootc image, or Vanilla OS on ABRoot
 A/B partitions. Instead of "back up, reinstall, spend a weekend restoring", it is one command,
