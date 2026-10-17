@@ -109,8 +109,9 @@ sudo plexy migrate --target vanilla --abroot-disk /dev/sdb        # dedicated di
 sudo plexy migrate --target vanilla --abroot-disk free:/dev/sda   # unpartitioned space
 
 # afterwards, on the new system
-plexy export          # re-export toolbox apps/commands
-sudo plexy cleanup    # delete the previous OS from /sysroot once you're happy
+plexy export                  # re-export toolbox apps/commands
+sudo plexy rollback --reboot  # changed your mind: back to the previous OS (bootc backend)
+sudo plexy cleanup            # delete the previous OS from /sysroot once you're happy
 # already image-based? switch images and keep layered packages:
 sudo plexy switch --target aurora
 ```
@@ -139,4 +140,27 @@ for pre-pulled images. `lab/verify.sh` checks a migrated guest. See [lab/README.
 
 ## Verified migrations
 
-_Filled in by the lab runs; see below._
+End-to-end runs in the [lab](lab/README.md): real installs, `plexy migrate --yes --reboot`, then
+[`lab/verify.sh`](lab/verify.sh) on the booted result. Checks cover the OS, booted image, users and
+password hashes, group memberships, data files, layered commands, services, mounts, Flatpaks,
+config content, failed units and SELinux denials. These are VMs, not your machine. **Nothing here
+is guaranteed.**
+
+| from | to | mode | result | evidence |
+|---|---|---|---|---|
+| Fedora 44 Cloud (btrfs subvols, nginx, sshd tweak) | Fedora Silverblue 44 | image | **17/17** | [cast](demos/fedora-silverblue.cast) · [gif](demos/fedora-silverblue.gif) · [verify](demos/fedora-silverblue.verify.txt) · [screen](demos/fedora-silverblue-login.png) |
+| …then `plexy rollback` | Fedora 44 Cloud again | — | **14/14** (chronyd ownership restored) | [verify](demos/fedora-rollback.verify.txt) |
+| Ultramarine 44 GNOME (ext4, RPM Fusion, Terra, GNOME ext., dconf, Flatpak) | Bluefin | hybrid | **13/14**¹ + desktop checked by hand | [cast](demos/ultramarine-bluefin.cast) · [gif](demos/ultramarine-bluefin.gif) · [verify](demos/ultramarine-bluefin.verify.txt) · [desktop](demos/ultramarine-bluefin-desktop.png) · [VLC → Flathub](demos/ultramarine-bluefin-vlc-flatpak.png) |
+
+¹ alice's migrated password unlocks her session; her dconf (dark mode, enabled extensions) applies;
+VLC (an RPM Fusion package) runs as `org.videolan.VLC`; `nvim` and `rg` were installed by Homebrew at
+first login; Cockpit is layered into the derived image with its socket enabled. The one failed check
+was `session-1.scope`, a root SSH session opened by the test harness that exited before systemd
+registered it — not a migration defect; `verify.sh` now ignores transient session scopes.
+
+![Fedora to Silverblue](demos/fedora-silverblue.gif)
+
+![VLC, an RPM Fusion package on Ultramarine, running as the Flathub app on Bluefin after migration](demos/ultramarine-bluefin-vlc-flatpak.png)
+
+See [docs/RESEARCH.md](docs/RESEARCH.md) for what bootc and ABRoot actually do and the list of
+problems these runs found and fixed.
