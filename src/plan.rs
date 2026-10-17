@@ -583,7 +583,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             origin: origin.into(),
             traits: traits.clone(),
         };
-        if is_infrastructure(&name) {
+        if is_infrastructure(&name) || is_distro_identity(&name, &m.os.id) {
             p.why =
                 "boot chain / package manager / release metadata: provided by the target".into();
             pkgs.push(p);
@@ -984,6 +984,22 @@ pub fn unit_protected(u: &str) -> bool {
         || u.starts_with("rpm-ostree")
 }
 
+/// Packages that make up the *identity* of the old distribution — its
+/// release files, branding, keys, installer and default configs. They are
+/// not software the user runs and conflict with any other distribution's
+/// release packages (e.g. inside a Fedora toolbox).
+pub fn is_distro_identity(pkg: &str, os_id: &str) -> bool {
+    let prefixed = !os_id.is_empty() && pkg.starts_with(&format!("{os_id}-"));
+    prefixed
+        || pkg.ends_with("-logos")
+        || pkg.contains("-logos-")
+        || pkg.contains("-backgrounds")
+        || pkg.ends_with("-gpg-keys")
+        || pkg.contains("-release-")
+        || pkg.contains("system-configs")
+        || pkg.starts_with("taidan-")
+}
+
 /// Repository definitions that only point at a distribution's own archive
 /// (the toolbox image and the target already have those).
 pub fn is_distro_repo(content: &str) -> bool {
@@ -1258,6 +1274,23 @@ mod tests {
             etc_translate("/etc/hosts", Family::Debian, Family::Fedora),
             "/etc/hosts"
         );
+    }
+
+    #[test]
+    fn distro_identity_packages() {
+        assert!(is_distro_identity(
+            "ultramarine-release-common",
+            "ultramarine"
+        ));
+        assert!(is_distro_identity("ultramarine-logos", "ultramarine"));
+        assert!(is_distro_identity("terra-gpg-keys", "ultramarine"));
+        assert!(is_distro_identity("fedora-logos-httpd", "fedora"));
+        assert!(is_distro_identity(
+            "taidan-ultramarine-configs",
+            "ultramarine"
+        ));
+        assert!(!is_distro_identity("vlc", "ultramarine"));
+        assert!(!is_distro_identity("neovim", "ubuntu"));
     }
 
     #[test]

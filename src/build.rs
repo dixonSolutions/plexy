@@ -11,7 +11,9 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn install_cmd(family: Family, pkgs: &[String]) -> String {
+/// Install command for a build. `tolerant` (toolboxes) skips individual
+/// packages that conflict instead of failing the whole build.
+fn install_cmd(family: Family, pkgs: &[String], tolerant: bool) -> String {
     let list = pkgs
         .iter()
         .map(|p| shq(p))
@@ -22,7 +24,8 @@ fn install_cmd(family: Family, pkgs: &[String]) -> String {
             "RUN (lpkg --unlock >/dev/null 2>&1 || true) && apt-get update && \\\n    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\\n        {list} && \\\n    rm -rf /var/lib/apt/lists/* && \\\n    (lpkg --lock >/dev/null 2>&1 || true)"
         ),
         _ => format!(
-            "RUN dnf -y install --setopt=install_weak_deps=False --skip-unavailable \\\n        {list} && \\\n    dnf clean all"
+            "RUN dnf -y install --setopt=install_weak_deps=False --skip-unavailable{} \\\n        {list} && \\\n    dnf clean all",
+            if tolerant { " --skip-broken" } else { "" }
         ),
     }
 }
@@ -100,7 +103,7 @@ pub fn system_containerfile(m: &Manifest, plan: &Plan, ctx: &Path) -> Result<Pat
     }
     cf.extend(stage_repos(m, &plan.repo_files, ctx)?);
     if !pkgs.is_empty() {
-        cf.push(install_cmd(plan.target_family, &pkgs));
+        cf.push(install_cmd(plan.target_family, &pkgs, false));
     }
     if plan.target_family == Family::Fedora {
         cf.push("RUN bootc container lint || true".into());
@@ -149,7 +152,7 @@ pub fn toolbox_containerfile(m: &Manifest, plan: &Plan, ctx: &Path) -> Result<Op
     let mut pkgs = plan.names_for(Dest::Toolbox);
     pkgs.retain(|p| !crate::mapping::is_infrastructure(p));
     if !pkgs.is_empty() {
-        cf.push(install_cmd(plan.source_family, &pkgs));
+        cf.push(install_cmd(plan.source_family, &pkgs, true));
     }
     if any {
         cf.push("COPY etc-overlay/ /".into());
@@ -195,11 +198,12 @@ mod tests {
 
     #[test]
     fn install_commands_per_family() {
-        let f = install_cmd(Family::Fedora, &["htop".into(), "nginx".into()]);
+        let f = install_cmd(Family::Fedora, &["htop".into(), "nginx".into()], false);
         assert!(
             f.contains("dnf -y install") && f.contains("htop") && f.contains("--skip-unavailable")
         );
-        let d = install_cmd(Family::Debian, &["htop".into()]);
+        let d = install_cmd(Family::Debian, &["htop".into()], false);
+        assert!(install_cmd(Family::Fedora, &["x".into()], true).contains("--skip-broken"));
         assert!(d.contains("apt-get install -y") && d.contains("rm -rf /var/lib/apt/lists"));
     }
 }
