@@ -644,12 +644,13 @@ fn write_accounts(m: &Manifest, plan: &Plan, deploy: &Path) -> Result<()> {
         put("/etc/subgid", &(merged.subgid + "\n"), 0o644)?;
     }
     for h in &m.accounts.humans {
-        info(format!(
-            "  user {} (uid {}) → groups {:?}",
-            h.name,
-            h.uid,
-            m.accounts.memberships.get(&h.name)
-        ));
+        let gs = m
+            .accounts
+            .memberships
+            .get(&h.name)
+            .map(|g| g.join(", "))
+            .unwrap_or_default();
+        info(format!("  user {} (uid {}), groups: {}", h.name, h.uid, gs));
     }
     Ok(())
 }
@@ -983,7 +984,8 @@ fn install_hooks(plan: &Plan, deploy: &Path, new_var: &Path, staging: &Path) -> 
     if util::dry_run() {
         return Ok(());
     }
-    let exe = std::env::current_exe()?;
+    // /proc/self/exe stays valid even after /usr/local (and this binary) moved.
+    let exe = PathBuf::from("/proc/self/exe");
     let bin = new_var.join("usrlocal/bin/plexy");
     fs::create_dir_all(bin.parent().unwrap())?;
     fs::copy(&exe, &bin)?;

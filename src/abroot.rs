@@ -624,7 +624,7 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     // Plexy itself, for the first-boot/first-login stages.
     let bin = a.join("var/usrlocal/bin/plexy");
     fs::create_dir_all(bin.parent().unwrap())?;
-    fs::copy(std::env::current_exe()?, &bin)?;
+    fs::copy("/proc/self/exe", &bin)?;
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o755))?;
     write_file(
         &a.join("etc/systemd/system/plexy-firstboot.service"),

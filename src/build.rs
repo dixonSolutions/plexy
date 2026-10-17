@@ -31,8 +31,26 @@ fn install_cmd(family: Family, pkgs: &[String]) -> String {
 /// preserving absolute paths, and return the COPY instructions.
 fn stage_repos(m: &Manifest, files: &[String], ctx: &Path) -> Result<Vec<String>> {
     let mut lines = vec![];
+    let mut wanted: Vec<String> = vec![];
     for r in m.repos.iter().filter(|r| files.contains(&r.path)) {
-        for p in std::iter::once(&r.path).chain(r.keys.iter()) {
+        wanted.push(r.path.clone());
+        // dnf variables appear in key paths (RPM-GPG-KEY-rpmfusion-free-fedora-$releasever)
+        wanted.extend(
+            r.keys
+                .iter()
+                .map(|k| expand_dnf_vars(k, &m.os.version_id, &m.os.arch)),
+        );
+    }
+    // Repo files often reference keys indirectly; the rpm key directory is
+    // small, so carry it whole for Fedora-family builds.
+    let keydir = fs::read_dir("/etc/pki/rpm-gpg");
+    if let (false, crate::os::Family::Fedora, Ok(rd)) = (wanted.is_empty(), m.os.family, keydir) {
+        wanted.extend(rd.flatten().map(|e| e.path().display().to_string()));
+    }
+    wanted.sort();
+    wanted.dedup();
+    {
+        for p in &wanted {
             let src = Path::new(p);
             if !src.exists() {
                 continue;
@@ -48,6 +66,16 @@ fn stage_repos(m: &Manifest, files: &[String], ctx: &Path) -> Result<Vec<String>
         lines.push("COPY rootfs/ /".to_string());
     }
     Ok(lines)
+}
+
+pub fn expand_dnf_vars(s: &str, releasever: &str, arch: &str) -> String {
+    s.replace(
+        "$releasever_major",
+        releasever.split('.').next().unwrap_or(releasever),
+    )
+    .replace("$releasever", releasever)
+    .replace("$basearch", arch)
+    .replace("$arch", arch)
 }
 
 /// Containerfile for the derived bootc image: target + repos + layered packages.
@@ -151,6 +179,19 @@ pub fn podman_build(ctx: &Path, tag: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dnf_var_expansion() {
+        assert_eq!(
+            expand_dnf_vars(
+                "/etc/pki/rpm-gpg/RPM-GPG-KEY-rpmfusion-free-fedora-$releasever",
+                "44",
+                "x86_64"
+            ),
+            "/etc/pki/rpm-gpg/RPM-GPG-KEY-rpmfusion-free-fedora-44"
+        );
+        assert_eq!(expand_dnf_vars("k-$basearch", "44", "x86_64"), "k-x86_64");
+    }
 
     #[test]
     fn install_commands_per_family() {

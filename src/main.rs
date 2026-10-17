@@ -378,6 +378,7 @@ fn print_scan_summary(m: &manifest::Manifest) {
 /// Resolve `--target`. "auto" walks catalog candidates for this desktop and
 /// keeps the first whose *inspected* desktop matches.
 fn choose_target(m: &manifest::Manifest, t: &str) -> Result<(String, target::ImageFacts)> {
+    util::ensure_tools(&[("podman", "podman")])?;
     if t != "auto" {
         let (img, _) = target::resolve(t);
         return Ok((t.to_string(), target::inspect(&img)?));
@@ -417,6 +418,53 @@ fn make_plan(
 ) -> Result<plan::Plan> {
     step("classifying packages");
     let mode = t.mode;
+    let mut p = make_plan_inner(m, facts, name, t, mode)?;
+    if let Some(tb) = p.toolbox.as_mut() {
+        // Toolbox images exist for the main distributions only; derivatives
+        // fall back to the plain distribution image (distrobox initialises any image).
+        let id_like =
+            m.os.id_like
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+        let candidates = [
+            tb.base_image.clone(),
+            format!("docker.io/library/{}:{}", m.os.id, m.os.version_id),
+            format!("docker.io/library/{id_like}:latest"),
+        ];
+        let found = candidates
+            .iter()
+            .find(|c| {
+                util::try_run("podman", &["manifest", "inspect", c.as_str()]).is_some()
+                    || util::try_run("podman", &["image", "exists", c.as_str()]).is_some()
+            })
+            .cloned();
+        match found {
+            Some(c) if c != tb.base_image => {
+                warn(format!(
+                    "{} not found; using {c} for the toolbox",
+                    tb.base_image
+                ));
+                tb.base_image = c;
+            }
+            Some(_) => {}
+            None => warn(format!(
+                "no container image found for {}; the toolbox build will fail",
+                m.os.pretty_name
+            )),
+        }
+    }
+    Ok(p)
+}
+
+fn make_plan_inner(
+    m: &manifest::Manifest,
+    facts: &target::ImageFacts,
+    name: String,
+    t: &TargetArgs,
+    mode: Mode,
+) -> Result<plan::Plan> {
     let files = package_files(m, mode == Mode::Toolbox || t.include_preinstalled)?;
     let brew_index = if matches!(mode, Mode::Brew | Mode::Hybrid) {
         load_brew_index()

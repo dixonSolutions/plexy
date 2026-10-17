@@ -55,6 +55,12 @@ if [[ $record == --record ]]; then
 else
     $ssh_cmd "$cmd" || true
 fi
+# A successful migrate reboots the guest; if ssh still answers right away it failed.
+sleep 15
+if "$L" ssh "$vm" true 2>/dev/null && ! "$L" ssh "$vm" 'test -e /run/ostree-booted || findmnt -n / | grep -q vos-'; then
+    echo "plexy migrate did not reboot into the new system; aborting verification" >&2
+    exit 1
+fi
 
 # wait for the reboot into the new system
 sleep 20
