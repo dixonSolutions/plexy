@@ -1342,7 +1342,7 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     println!("\n  The new system is installed and your data has been placed. Reboot to start it.");
     println!("  The old system's files remain under /sysroot until you run `plexy cleanup`.\n");
     if opts.reboot && !util::dry_run() {
-        run("systemctl", &["reboot"])?;
+        util::reboot_staged()?;
     }
     Ok(())
 }

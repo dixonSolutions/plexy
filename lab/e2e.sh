@@ -135,7 +135,9 @@ else
 fi
 # A successful migrate reboots the guest; if ssh still answers right away it failed.
 sleep 15
-if "$L" ssh "$vm" true 2>/dev/null && ! "$L" ssh "$vm" 'test -e /run/ostree-booted || findmnt -n / | grep -q vos-'; then
+# timeout: a half-replaced system can accept ssh and then hang the login.
+if timeout 60 "$L" ssh "$vm" true 2>/dev/null &&
+    ! timeout 60 "$L" ssh "$vm" 'test -e /run/ostree-booted || findmnt -n / | grep -q vos-'; then
     echo "plexy migrate did not reboot into the new system; aborting verification" >&2
     exit 1
 fi

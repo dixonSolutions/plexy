@@ -218,6 +218,29 @@ pub fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// Reboot into a system plexy has just staged, as `--reboot` asked. A desktop
+/// session's block inhibitors (gsd-power, gsd-media-keys) make a plain
+/// `systemctl reboot` fail with "Operation denied due to active block
+/// inhibitor", which would leave the machine running a half-replaced system.
+/// Say who held them, then reboot past them; delay inhibitors still run.
+pub fn reboot_staged() -> Result<()> {
+    if let Some(list) = try_run("systemd-inhibit", &["--list", "--mode=block", "--no-pager"]) {
+        let who: Vec<&str> = list
+            .lines()
+            .skip(1)
+            .filter(|l| !l.trim().is_empty() && !l.contains("inhibitors listed"))
+            .collect();
+        if !who.is_empty() {
+            warn(format!(
+                "rebooting past {} block inhibitor(s) (the migration is staged):\n{}",
+                who.len(),
+                who.join("\n")
+            ));
+        }
+    }
+    run("systemctl", &["reboot", "--check-inhibitors=no"]).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

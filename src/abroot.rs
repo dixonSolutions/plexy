@@ -873,7 +873,7 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         "  Your previous system is untouched and stays available in the firmware boot menu.\n"
     );
     if reboot {
-        run("systemctl", &["reboot"])?;
+        util::reboot_staged()?;
     }
     Ok(())
 }

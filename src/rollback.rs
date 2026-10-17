@@ -214,7 +214,7 @@ pub fn rollback(yes: bool, reboot: bool) -> Result<()> {
     println!("\n  Done. Reboot to start {old}. The image-based system remains in /ostree");
     println!("  on the old root; delete /ostree from there once you no longer need it.\n");
     if reboot {
-        run("systemctl", &["reboot"])?;
+        util::reboot_staged()?;
     }
     Ok(())
 }
