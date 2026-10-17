@@ -39,6 +39,15 @@ lab.sh rm NAME
 lab.sh mem                         # RSS of running guests and host headroom
 ```
 
+## Disk sizes
+
+Toolbox mode keeps the old OS (for rollback), the new deployment, root's container images, the
+toolbox archive and each user's unpacked toolbox on one filesystem. `ultra1`'s 40 GB disk was
+too small (plexy now refuses that up front). It was grown to 60 GB: `qemu-img convert -l
+snapshot.name=loaded`, `qemu-img resize`, then guestfish `part-expand-gpt`, `part-resize`, `e2fsck-f`,
+`resize2fs`, and a fresh `loaded` snapshot. Images with internal snapshots cannot be resized
+in place.
+
 ## Memory budget
 
 QEMU keeps every page of guest RAM the guest has touched, and a migration touches all of it
