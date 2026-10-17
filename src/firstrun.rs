@@ -372,6 +372,22 @@ fn setup_brew(formulas: &[String]) -> Result<Option<usize>> {
     let mut args = vec!["install".to_string()];
     args.extend(formulas.iter().cloned());
     run(&b, &args)?;
+    // On the old system these commands were in /usr/bin and worked everywhere;
+    // Bluefin puts Homebrew on PATH only in interactive shells. Link them into
+    // ~/.local/bin so scripts, $EDITOR and launchers still find them.
+    let prefix_bin = brew.parent().unwrap().to_path_buf();
+    let local_bin = home().join(".local/bin");
+    for f in formulas {
+        let listed = try_run(&b, &["list", "--formula", f.as_str()]).unwrap_or_default();
+        for cmd in brew_commands(&listed) {
+            let target = prefix_bin.join(&cmd);
+            let link = local_bin.join(&cmd);
+            if target.exists() && fs::symlink_metadata(&link).is_err() {
+                fs::create_dir_all(&local_bin)?;
+                std::os::unix::fs::symlink(&target, &link)?;
+            }
+        }
+    }
     // Config of tools moved to Homebrew: brew-built tools read $HOMEBREW_PREFIX/etc.
     let staged = Path::new(STATE).join("staging/brew-etc");
     if staged.exists() {
@@ -379,6 +395,23 @@ fn setup_brew(formulas: &[String]) -> Result<Option<usize>> {
         copy_tree(&staged, &prefix)?;
     }
     Ok(Some(formulas.len()))
+}
+
+/// Command names a formula installs, from `brew list --formula NAME`
+/// (paths like .../Cellar/neovim/0.12.5/bin/nvim).
+fn brew_commands(listed: &str) -> Vec<String> {
+    let mut v: Vec<String> = listed
+        .lines()
+        .map(str::trim)
+        .filter_map(|l| {
+            let p = Path::new(l);
+            (p.parent()?.file_name()? == "bin")
+                .then(|| p.file_name()?.to_str().map(String::from))?
+        })
+        .collect();
+    v.sort();
+    v.dedup();
+    v
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
@@ -394,4 +427,16 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn brew_commands_from_listing() {
+        let l = "/home/linuxbrew/.linuxbrew/Cellar/ripgrep/15.2.0/bin/rg\n/home/linuxbrew/.linuxbrew/Cellar/ripgrep/15.2.0/share/man/man1/rg.1\n/home/linuxbrew/.linuxbrew/Cellar/ripgrep/15.2.0/etc/bash_completion.d/rg\n";
+        assert_eq!(brew_commands(l), vec!["rg"]);
+        assert!(brew_commands("").is_empty());
+    }
 }
