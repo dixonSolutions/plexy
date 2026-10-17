@@ -14,11 +14,16 @@
 #   EXPECT_WAITFILE  wait (up to 15 min) for this file first (e.g. first-login done)
 #   EXPECT_USERCMDS  user:command:args run as that user in a login shell
 #   EXPECT_SESSION   user who must have a graphical session on seat0 (autologin works)
+#   EXPECT_STARTUSER user whose systemd user manager is started as a login would
+#                    (headless guests: runs plexy's first-login stage)
 pass=0 fail=0
 ok() { pass=$((pass + 1)); printf 'PASS  %s\n' "$*"; }
 ko() { fail=$((fail + 1)); printf 'FAIL  %s\n' "$*"; }
 chk() { desc=$1; shift; if "$@" >/dev/null 2>&1; then ok "$desc"; else ko "$desc"; fi; }
 
+if [ -n "$EXPECT_STARTUSER" ]; then
+  systemctl start "user@$(id -u "$EXPECT_STARTUSER").service"
+fi
 if [ -n "$EXPECT_WAITFILE" ]; then
   i=0; while [ ! -e "$EXPECT_WAITFILE" ] && [ $i -lt 180 ]; do sleep 5; i=$((i + 1)); done
 fi

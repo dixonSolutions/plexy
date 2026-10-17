@@ -23,7 +23,7 @@ EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_MOUNTS="/var /var/home" EXPECT
 
 VM[ultramarine-bluefin]=ultra1
 ARGS[ultramarine-bluefin]="--target bluefin --mode hybrid"
-EXPECT[ultramarine-bluefin]='EXPECT_SESSION=alice EXPECT_OS=Bluefin EXPECT_USERS=alice EXPECT_GROUPS=alice:wheel
+EXPECT[ultramarine-bluefin]='EXPECT_WAITFILE=/var/home/alice/.local/state/plexy/firstlogin.done EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version" EXPECT_SESSION=alice EXPECT_OS=Bluefin EXPECT_USERS=alice EXPECT_GROUPS=alice:wheel
 EXPECT_FILES="/var/home/alice/Documents/thesis.txt /etc/dconf/db/local.d/00-plexy-test /etc/gdm/custom.conf"
 EXPECT_CMDS="cockpit-bridge" EXPECT_ENABLED="cockpit.socket" EXPECT_FLATPAKS=org.gnome.Calculator
 EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=alice"'
@@ -38,7 +38,7 @@ EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version"'
 VM[ubuntu-bluefin]=ubu1
 SNAP[ubuntu-bluefin]=loaded-bluefin
 ARGS[ubuntu-bluefin]="--target bluefin --mode hybrid"
-EXPECT[ubuntu-bluefin]='EXPECT_SESSION=tester EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[ubuntu-bluefin]='EXPECT_WAITFILE=/var/home/tester/.local/state/plexy/firstlogin.done EXPECT_USERCMDS="tester:nvim:--version tester:rg:--version" EXPECT_SESSION=tester EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/etc/tmux.conf /var/home/tester/Documents/notes.txt" EXPECT_CMDS="nginx" EXPECT_ACTIVE="nginx.service gdm.service sshd.service"
 EXPECT_FLATPAKS=org.mozilla.firefox EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=tester"'
 
@@ -51,7 +51,7 @@ EXPECT_GREP="/etc/gdm3/daemon.conf:AutomaticLogin=tester"'
 
 VM[debian-bluefin]=deb1
 ARGS[debian-bluefin]="--target bluefin --mode hybrid"
-EXPECT[debian-bluefin]='EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[debian-bluefin]='EXPECT_STARTUSER=tester EXPECT_WAITFILE=/var/home/tester/.local/state/plexy/firstlogin.done EXPECT_USERCMDS="tester:nvim:--version tester:rg:--version" EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="nginx htop tmux"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 
