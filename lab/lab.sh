@@ -137,7 +137,7 @@ cmd_start() { # NAME [extra qemu args...]
         fw=(-drive "if=pflash,format=raw,readonly=on,file=$(firmware)" -drive "if=pflash,format=raw,file=$RUN/$name.vars.fd")
     fi
     [[ -f $RUN/$name.seed/seed.iso ]] && seed=(-drive "file=$RUN/$name.seed/seed.iso,media=cdrom,readonly=on")
-    [[ -f $RUN/$name.disk2.qcow2 ]] && seed+=(-drive "file=$RUN/$name.disk2.qcow2,if=none,id=d1,cache=unsafe,discard=unmap" -device virtio-blk-pci,drive=d1)
+    [[ -f $RUN/$name.disk2.qcow2 ]] && seed+=(-drive "file=$RUN/$name.disk2.qcow2,if=none,id=d1,cache=unsafe,discard=unmap" -device virtio-blk-pci,drive=d1,bootindex=0)
     "$QEMU" -name "$name" -enable-kvm -machine q35 -cpu host -m "$MEM" -smp "$CPUS" \
         "${fw[@]}" \
         -drive "file=$RUN/$name.qcow2,if=none,id=d0,cache=unsafe,discard=unmap" -device virtio-blk-pci,drive=d0,bootindex=1 \

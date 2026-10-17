@@ -75,7 +75,8 @@ a review screen, and a reboot.
      numeric ids differ, and SELinux relabelling with the *target's* policy.
    * **ABRoot backend** (Vanilla OS): builds the A/B layout the Vanilla installer would
      (`vos-boot`, LVM `vos-root` with `init` + thin `root-a`/`root-b`, `vos-var`) on a disk or
-     free space you designate, unpacks the image into root A, writes accounts and config into the
+     free space you designate (on a disk other than the current ESP's, plus its own `vos-efi`
+     ESP, so the firmware boots from the disk that holds the new system), unpacks the image into root A, writes accounts and config into the
      `/etc` overlay's upper directory (so ABRoot's 3-way merge keeps them on upgrade), records
      layered packages in `/etc/abroot/packages.add`, installs GRUB + the EFI entry and copies your
      data. **Your old system is not touched** and stays bootable from the firmware menu.

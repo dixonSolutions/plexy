@@ -32,6 +32,10 @@ use std::path::{Path, PathBuf};
 
 const MNT: &str = "/mnt/plexy-abroot";
 const BOOT_MIB: u64 = 1024;
+/// EFI system partition created on the ABRoot disk when the current one is
+/// on another disk: firmware with fast boot may not initialise a second
+/// disk, and GRUB then cannot find vos-boot on it.
+const ESP_MIB: u64 = 512;
 const ROOT_PV_MIB: u64 = 22 * 1024;
 const VAR_MIN_MIB: u64 = 20 * 1024;
 
@@ -91,6 +95,8 @@ fn abroot_cfg(kver: &str, root_dev: &str, kargs: &str) -> String {
 pub struct Layout {
     #[allow(dead_code)]
     pub disk: String,
+    /// Our own EFI system partition, when we created one.
+    pub esp: Option<String>,
     pub boot: String,
     pub pv: String,
     pub var: String,
@@ -111,13 +117,18 @@ fn part_dev(disk: &str, n: u32) -> String {
 
 /// sfdisk script lines for the three ABRoot partitions (key=value syntax;
 /// sfdisk rejects positional fields mixed with name=). `var_mib` None = rest.
-fn sfdisk_parts(var_mib: Option<u64>) -> String {
+fn sfdisk_parts(var_mib: Option<u64>, with_esp: bool) -> String {
     let var = match var_mib {
         Some(m) => format!("size={m}MiB, "),
         None => String::new(),
     };
+    let esp = if with_esp {
+        format!("size={ESP_MIB}MiB, type=uefi, name=vos-efi\n")
+    } else {
+        String::new()
+    };
     format!(
-        "size={BOOT_MIB}MiB, type=linux, name=vos-boot\nsize={ROOT_PV_MIB}MiB, type=lvm, name=vos-root\n{var}type=linux, name=vos-var\n"
+        "{esp}size={BOOT_MIB}MiB, type=linux, name=vos-boot\nsize={ROOT_PV_MIB}MiB, type=lvm, name=vos-root\n{var}type=linux, name=vos-var\n"
     )
 }
 
@@ -218,16 +229,19 @@ fn release_disk(disk: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn partition(spec: &str) -> Result<Layout> {
+/// `esp_disk` is the disk holding the current EFI system partition. Unless
+/// the ABRoot volumes go on that same disk, they get their own ESP.
+pub fn partition(spec: &str, esp_disk: &str) -> Result<Layout> {
     let (disk, whole) = match spec.strip_prefix("free:") {
         Some(d) => (d.to_string(), false),
         None => (spec.to_string(), true),
     };
+    let own_esp = disk != esp_disk;
     if !Path::new(&disk).exists() {
         bail!("{disk} does not exist");
     }
     let need_var = (data_size_mib() * 12 / 10).max(VAR_MIN_MIB);
-    let need = BOOT_MIB + ROOT_PV_MIB + need_var;
+    let need = BOOT_MIB + ROOT_PV_MIB + need_var + if own_esp { ESP_MIB } else { 0 };
     if whole {
         // Refuse to wipe a disk that holds mounted filesystems.
         let mounted = try_run("lsblk", &["-n", "-o", "MOUNTPOINTS", &disk]).unwrap_or_default();
@@ -247,7 +261,7 @@ pub fn partition(spec: &str) -> Result<Layout> {
         step(format!(
             "partitioning {disk} for ABRoot (vos-boot, vos-root LVM, vos-var)"
         ));
-        let script = format!("label: gpt\n{}", sfdisk_parts(None));
+        let script = format!("label: gpt\n{}", sfdisk_parts(None, own_esp));
         if !util::dry_run() {
             util::run_stdin(
                 "sfdisk",
@@ -256,10 +270,12 @@ pub fn partition(spec: &str) -> Result<Layout> {
             )?;
         }
         let _ = try_run("udevadm", &["settle"]);
+        let first = if own_esp { 2 } else { 1 };
         return Ok(Layout {
-            boot: part_dev(&disk, 1),
-            pv: part_dev(&disk, 2),
-            var: part_dev(&disk, 3),
+            esp: own_esp.then(|| part_dev(&disk, 1)),
+            boot: part_dev(&disk, first),
+            pv: part_dev(&disk, first + 1),
+            var: part_dev(&disk, first + 2),
             disk,
         });
     }
@@ -278,7 +294,7 @@ pub fn partition(spec: &str) -> Result<Layout> {
     step(format!(
         "creating ABRoot partitions in free space on {disk}"
     ));
-    let script = sfdisk_parts(Some(need_var));
+    let script = sfdisk_parts(Some(need_var), own_esp);
     if !util::dry_run() {
         util::run_stdin("sfdisk", &["--append", "--no-reread", &disk], &script)?;
         let _ = try_run("partx", &["-a", &disk]);
@@ -288,14 +304,17 @@ pub fn partition(spec: &str) -> Result<Layout> {
         .into_iter()
         .filter(|p| !before.contains(p))
         .collect();
-    if new.len() != 3 {
-        bail!("expected 3 new partitions on {disk}, found {:?}", new);
+    let want = if own_esp { 4 } else { 3 };
+    if new.len() != want {
+        bail!("expected {want} new partitions on {disk}, found {:?}", new);
     }
+    let o = usize::from(own_esp);
     Ok(Layout {
         disk,
-        boot: new[0].clone(),
-        pv: new[1].clone(),
-        var: new[2].clone(),
+        esp: own_esp.then(|| new[0].clone()),
+        boot: new[o].clone(),
+        pv: new[o + 1].clone(),
+        var: new[o + 2].clone(),
     })
 }
 
@@ -311,6 +330,9 @@ fn list_parts(disk: &str) -> Vec<String> {
 fn mkfs_and_lvm(l: &Layout) -> Result<()> {
     step("creating filesystems and the vos-root thin pool");
     let r = |p: &str, a: &[&str]| util::run_visible(p, a);
+    if let Some(esp) = &l.esp {
+        r("mkfs.vfat", &["-F", "32", "-n", "VOS-EFI", esp])?;
+    }
     r("mkfs.ext4", &["-q", "-F", "-L", "vos-boot", &l.boot])?;
     r("mkfs.btrfs", &["-q", "-f", "-L", "vos-var", &l.var])?;
     r("pvcreate", &["-ff", "-y", &l.pv])?;
@@ -418,6 +440,7 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         ("pvcreate", "lvm2"),
         ("mkfs.btrfs", "btrfs-progs"),
         ("mkfs.ext4", "e2fsprogs"),
+        ("mkfs.vfat", "dosfstools"),
         ("efibootmgr", "efibootmgr"),
         ("podman", "podman"),
     ])?;
@@ -439,7 +462,11 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     };
     crate::target::pull(&image)?;
 
-    let layout = partition(spec)?;
+    let (old_esp_disk, _) = disk_and_partnum(&esp)?;
+    let layout = partition(spec, &old_esp_disk)?;
+    // The ESP the new system boots from: ours on the ABRoot disk, or the
+    // current one when the volumes share its disk.
+    let esp = layout.esp.clone().unwrap_or(esp);
     mkfs_and_lvm(&layout)?;
 
     let a = PathBuf::from(MNT).join("a");
@@ -458,7 +485,10 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     let _ = run("podman", &["rm", "-f", &cname]);
     st?;
     mount(&layout.boot, &a.join("boot"), &[])?;
-    mount("/boot/efi", &a.join("boot/efi"), &["--bind"])?;
+    match &layout.esp {
+        Some(p) => mount(p, &a.join("boot/efi"), &[])?,
+        None => mount("/boot/efi", &a.join("boot/efi"), &["--bind"])?,
+    }
 
     step("arranging the ABRoot filesystem structure");
     fs::create_dir_all(a.join("part-future"))?;
@@ -862,11 +892,17 @@ mod tests {
 
     #[test]
     fn sfdisk_script() {
-        let s = sfdisk_parts(None);
+        let s = sfdisk_parts(None, false);
         assert!(s.starts_with("size=1024MiB, type=linux, name=vos-boot\n"));
         assert!(s.contains("type=lvm, name=vos-root"));
         assert!(s.ends_with("type=linux, name=vos-var\n"));
-        assert!(sfdisk_parts(Some(30000)).contains("size=30000MiB, type=linux, name=vos-var"));
+        assert!(
+            sfdisk_parts(Some(30000), false).contains("size=30000MiB, type=linux, name=vos-var")
+        );
+        let e = sfdisk_parts(None, true);
+        assert!(e.starts_with(
+            "size=512MiB, type=uefi, name=vos-efi\nsize=1024MiB, type=linux, name=vos-boot\n"
+        ));
     }
 
     #[test]
