@@ -1,0 +1,24 @@
+== Fedora Linux 44.20261017.0 (Silverblue) (kernel 7.2.11-200.fc44.x86_64)
+PASS  os is Silverblue
+PASS  booted from an ostree/bootc deployment
+● Booted image: containers-storage:localhost/plexy/silverblue:fed1
+        Digest: sha256:6f97b9139563172b32bf315b614215eab6a8e31cfb93af6fedd6d89ee8b00159 (amd64)
+       Version: 44.20261017.0 (2026-10-17T22:19:30Z)
+PASS  user tester exists
+PASS  home of tester present (/home/tester)
+PASS  password hash of tester carried
+PASS  tester in group wheel
+PASS  file /var/home/tester/projects/note.txt
+PASS  file /etc/tmux.conf
+PASS  file /etc/plexy-custom-marker
+PASS  command htop
+PASS  command tmux
+PASS  command nginx
+PASS  unit nginx.service active
+PASS  unit sshd.service active
+PASS  /etc/plexy-custom-marker contains 'plexy-custom'
+PASS  no failed units
+   SELinux: Enforcing, AVC denials this boot: 7
+   firstboot: Plexy migration to quay.io/fedora/fedora-silverblue:44 completed first boot.
+   firstboot: system dconf databases rebuilt
+== 16 passed, 0 failed

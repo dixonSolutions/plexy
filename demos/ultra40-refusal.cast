@@ -1,0 +1,13 @@
+{"version":3,"term":{"cols":80,"rows":24},"timestamp":1792275472,"idle_time_limit":2.0,"command":"ssh -t -q -i /var/home/ratnode2/VMs/plexy-lab/id_ed25519 -p 2205 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1 '. /etc/os-release; echo \"# $PRETTY_NAME -> plexy \"; plexy migrate --target bluefin --mode toolbox --yes --reboot'","env":{"SHELL":"/bin/bash"}}
+[0.155, "o", "# Ultramarine Linux 44 (GNOME Edition) -> plexy \r\n"]
+[0.000, "o", "\u001b[1;34m::\u001b[0m detecting operating system\r\n"]
+[0.000, "o", "\u001b[1;34m::\u001b[0m Ultramarine Linux 44 (GNOME Edition) — family Fedora, package manager Dnf5\r\n"]
+[0.009, "o", "\u001b[1;34m::\u001b[0m reading package database (this can take a minute)\r\n"]
+[3.366, "o", "\r\n  system   : Ultramarine Linux 44 (GNOME Edition) (Fedora, Dnf5)\r\n  desktop  : GNOME (display manager: gdm)\r\n  boot     : UEFI root=/dev/vda3 (ext4)\r\n  packages : 2068 installed, 7 user-installed\r\n  config   : 20 modified package configs, 228 unowned files in /etc\r\n  repos    : 14\r\n  users    : alice\r\n  services : 110 enabled\r\n  flatpak  : 1 system apps, remotes: flathub\r\n\r\n"]
+[0.146, "o", "\u001b[1;34m::\u001b[0m inspecting ghcr.io/ublue-os/bluefin:stable\r\n"]
+[0.934, "o", "\u001b[1;32m==>\u001b[0m \u001b[1mclassifying packages\u001b[0m\r\n"]
+[2.996, "o", "\r\n  source : Ultramarine Linux 44 (GNOME Edition) (Fedora, desktop: GNOME)\r\n  target : bluefin [ghcr.io/ublue-os/bluefin:stable] (Fedora, desktop: GNOME, backend: Bootc)\r\n  mode   : Toolbox\r\n\r\n  already in target image         1377 package(s)\r\n  layer into system image            1 package(s)\r\n      cockpit\r\n  toolbox container (exported)     562 package(s)\r\n  skip                             128 package(s)\r\n\r\n  config files: 24 → /etc, 0 → toolbox, 0 → brew, 224 skipped\r\n  toolbox: distrobox 'ultramarine-44' from registry.fedoraproject.org/fedora-toolbox:44\r\n\r\n"]
+[0.011, "o", "\u001b[1;34m::\u001b[0m plan written to /var/lib/plexy/plan/plan.json\r\n"]
+[0.040, "o", "\u001b[1;34m::\u001b[0m review or edit /var/lib/plexy/plan/{plan.json,system/Containerfile,toolbox/Containerfile}\r\n"]
+[0.040, "o", "\u001b[1;31merror:\u001b[0m 19.0 GiB free on /, 20.4 GiB needed: building the images and installing the new system next to the old one. Free space (e.g. `podman image prune`, `dnf clean all` / `apt clean`) and re-run\r\n"]
+[0.001, "x", "1"]

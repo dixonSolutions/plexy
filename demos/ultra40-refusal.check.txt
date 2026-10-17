@@ -1,0 +1,4 @@
+os: Ultramarine Linux 44 (GNOME Edition)
+PASS no /ostree
+PASS /boot unchanged
+PASS output mentions 'GiB needed'
