@@ -123,8 +123,8 @@ const GIB: u64 = 1024 * 1024 * 1024;
 pub const MIN_FREE_FOR_IMAGE: u64 = 12 * GIB;
 /// Room a toolbox needs per package routed to it: the compressed archive
 /// plus what a user's first login unpacks. Measured: 506 Ultramarine
-/// packages, 2.0 GB archive, 7.3 GB once the container was up: ~18 MB each.
-pub const TOOLBOX_PER_PACKAGE: u64 = 18 * 1024 * 1024;
+/// packages, 2.0 GB archive, 5.4 GB unpacked: ~15 MB each, 16 with margin.
+pub const TOOLBOX_PER_PACKAGE: u64 = 16 * 1024 * 1024;
 pub const TOOLBOX_MIN_ROOM: u64 = 4 * GIB;
 
 /// Room the ostree deployment of an image needs on /. Measured: a 7.4 GB
@@ -138,13 +138,14 @@ pub fn deploy_room(image_bytes: Option<u64>) -> u64 {
 /// image is removed from container storage (the archive is compressed).
 pub const TOOLBOX_SIZE_FILE: &str = "/var/lib/plexy/staging/toolbox.size";
 
-/// Room each user's first login needs: the unpacked toolbox image plus 30 %
-/// for the container distrobox creates from it. Without a recorded size,
-/// assume 3x the gzip archive (measured 2.7x). Measured end to end: 5.4 GB
-/// image, 7.3 GB used once the container was up.
+/// Room each user's first login needs: the unpacked toolbox image plus 10 %
+/// for the container distrobox creates. Without a recorded size, assume 3x
+/// the gzip archive (measured 2.7x). Measured: a 5.4 GB image used 7.3 GB,
+/// 1.9 GB of which was the /var/tmp copy an oci-archive load makes and a
+/// docker-archive load does not.
 pub fn toolbox_unpack_room(unpacked: Option<u64>, archive_bytes: u64) -> u64 {
     let u = unpacked.unwrap_or(archive_bytes * 3);
-    u + u * 3 / 10
+    u + u / 10
 }
 
 /// Free space on / needed before building, so a migration that cannot fit
@@ -1386,10 +1387,10 @@ mod tests {
         assert_eq!(deploy_room(Some(10 * g)), 11 * g);
         assert_eq!(deploy_room(Some(20 * g)), 22 * g);
         assert_eq!(required_free_before_build(None, 10), 16 * g);
-        assert_eq!(required_free_before_build(None, 512), 21 * g);
+        assert_eq!(required_free_before_build(None, 512), 20 * g);
         assert_eq!(required_free_before_build(Some(20 * g), 0), 22 * g);
-        assert_eq!(toolbox_unpack_room(None, 10 * g), 39 * g);
-        assert_eq!(toolbox_unpack_room(Some(10 * g), 2 * g), 13 * g);
+        assert_eq!(toolbox_unpack_room(None, 10 * g), 33 * g);
+        assert_eq!(toolbox_unpack_room(Some(10 * g), 2 * g), 11 * g);
     }
 
     use super::*;
