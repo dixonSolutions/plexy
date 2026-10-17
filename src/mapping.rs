@@ -248,6 +248,32 @@ pub fn is_infrastructure(name: &str) -> bool {
     EXACT.contains(&name) || PREFIX.iter().any(|p| name.starts_with(p)) || name.ends_with("-release")
 }
 
+/// Flathub app id for a desktop application package (same names as their
+/// snaps for the common apps, plus distro package names that differ).
+pub fn app_flatpak(pkg: &str) -> Option<&'static str> {
+    let alias = match pkg {
+        "vlc" | "vlc-gui-qt" => "vlc",
+        "chromium-browser" => "chromium",
+        "keepassxc" => "keepassxc",
+        "libreoffice-writer" | "libreoffice-calc" | "libreoffice-impress" | "libreoffice-core" => "libreoffice",
+        "obs-studio" => "obs-studio",
+        "telegram-desktop" => "telegram-desktop",
+        "thunderbird" => "thunderbird",
+        "steam" | "steam-installer" => "steam",
+        "gimp" => "gimp",
+        "inkscape" => "inkscape",
+        "krita" => "krita",
+        "kdenlive" => "kdenlive",
+        "audacity" => "audacity",
+        "blender" => "blender",
+        "mpv" => "mpv",
+        "discord" => "discord",
+        "code" => "code",
+        _ => return None,
+    };
+    crate::state::snap_to_flatpak(alias)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Mapped {
     /// Names to install in the target (may be several, may be empty = "drop").
@@ -400,6 +426,13 @@ mod tests {
         for n in ["htop", "nginx", "tmux", "gnome-tweaks"] {
             assert!(!is_infrastructure(n), "{n}");
         }
+    }
+
+    #[test]
+    fn desktop_apps_to_flathub() {
+        assert_eq!(app_flatpak("vlc"), Some("org.videolan.VLC"));
+        assert_eq!(app_flatpak("libreoffice-writer"), Some("org.libreoffice.LibreOffice"));
+        assert_eq!(app_flatpak("htop"), None);
     }
 
     #[test]

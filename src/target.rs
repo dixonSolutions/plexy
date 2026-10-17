@@ -53,7 +53,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         summary: "Fedora COSMIC Atomic" },
     CatalogEntry { id: "fedora-bootc", image: "quay.io/fedora/fedora-bootc:44", backend: Backend::Bootc,
         summary: "Fedora bootc base (headless servers)" },
-    CatalogEntry { id: "vanilla", image: "ghcr.io/vanilla-os/desktop:main", backend: Backend::Abroot,
+    CatalogEntry { id: "vanilla", image: "ghcr.io/vanilla-os/gnome:latest", backend: Backend::Abroot,
         summary: "Vanilla OS (GNOME, Debian-based) on ABRoot A/B partitions" },
 ];
 
@@ -105,7 +105,8 @@ sec() { echo "@@@$1"; }
 sec os; cat /usr/lib/os-release 2>/dev/null || cat /etc/os-release
 sec pkgs
 if command -v rpm >/dev/null 2>&1; then rpm -qa --qf '%{NAME}\n'; fi
-if command -v dpkg-query >/dev/null 2>&1; then dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' | awk '$1=="ii"{print $2}'; fi
+# read the dpkg database directly: Vanilla OS locks the dpkg/apt binaries (lpkg)
+if [ -f /var/lib/dpkg/status ]; then awk '/^Package: /{p=$2} /^Status: install ok installed/{print p}' /var/lib/dpkg/status; fi
 sec sessions; ls /usr/share/wayland-sessions /usr/share/xsessions 2>/dev/null
 sec dm; readlink /etc/systemd/system/display-manager.service 2>/dev/null; readlink /usr/lib/systemd/system/display-manager.service 2>/dev/null; true
 sec passwd; cat /usr/lib/passwd /etc/passwd 2>/dev/null

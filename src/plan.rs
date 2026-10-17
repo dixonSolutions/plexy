@@ -108,7 +108,13 @@ pub fn classify_files(files: &str) -> PkgTraits {
             t.shell_extension = true;
             t.host_level = true;
         } else if f.starts_with("/usr/share/applications/") && f.ends_with(".desktop") {
-            t.gui = true;
+            // Launchers for terminal programs (htop, nvim) or hidden helpers do
+            // not make a package a desktop app.
+            let entry = std::fs::read_to_string(f).unwrap_or_default();
+            let hidden = entry.lines().any(|l| matches!(l.trim(), "Terminal=true" | "NoDisplay=true"));
+            if !hidden {
+                t.gui = true;
+            }
             t.desktop_files.push(f.rsplit('/').next().unwrap().to_string());
         } else if ["/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/games/"].iter().any(|d| f.starts_with(d))
             && f.len() > 9
@@ -460,9 +466,13 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             Mode::Toolbox | Mode::Hybrid => {
                 if traits.host_level {
                     route_host(&mut p, "system-level (services/drivers/shell extensions must run on the host)");
-                } else if inp.mode == Mode::Hybrid && formula.is_some() {
+                } else if inp.mode == Mode::Hybrid && traits.gui && mapping::app_flatpak(&name).is_some() {
+                    p.dest = Dest::Flatpak;
+                    p.target_names = vec![mapping::app_flatpak(&name).unwrap().to_string()];
+                    p.why = "desktop app: the Flathub build replaces the distro package".into();
+                } else if let (Mode::Hybrid, Some(f)) = (inp.mode, formula.clone()) {
                     p.dest = Dest::Brew;
-                    p.target_names = vec![formula.unwrap()];
+                    p.target_names = vec![f];
                     p.why = "command-line tool with a Homebrew formula".into();
                 } else if toolbox_possible {
                     p.dest = Dest::Toolbox;
@@ -498,6 +508,11 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             None => warnings.push(format!("snap '{}' has no known Flatpak equivalent; reinstall it manually", s.name)),
         }
     }
+    for p in pkgs.iter().filter(|p| p.dest == Dest::Flatpak && !p.name.starts_with("snap:")) {
+        flatpaks.extend(p.target_names.iter().cloned());
+    }
+    flatpaks.sort();
+    flatpaks.dedup();
     pkgs.sort_by(|a, b| a.dest.cmp(&b.dest).then(a.name.cmp(&b.name)));
 
     // --- configs ------------------------------------------------------------
@@ -779,7 +794,7 @@ mod tests {
         );
         assert!(t.host_level && t.cli);
         assert_eq!(t.units, vec!["nginx.service"]);
-        let t = classify_files("/usr/bin/htop\n/usr/share/applications/htop.desktop\n/usr/share/man/man1/htop.1.gz\n");
+        let t = classify_files("/usr/bin/plexyapp\n/usr/share/applications/plexy-test-app.desktop\n/usr/share/man/man1/plexyapp.1.gz\n");
         assert!(t.cli && t.gui && !t.host_level);
         let t = classify_files("/usr/share/gnome-shell/extensions/appindicatorsupport@rgcjonas.gmail.com/metadata.json\n");
         assert!(t.shell_extension && t.host_level);

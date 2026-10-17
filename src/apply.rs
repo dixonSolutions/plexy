@@ -273,7 +273,7 @@ fn merge_move(src: &Path, dst: &Path, journal: &mut MoveJournal) -> Result<()> {
     }
     // Conflict: the image created something the user also had. Keep the
     // user's version, park the image default next to it.
-    let parked = dst.with_extension("plexy-image-default");
+    let parked = PathBuf::from(format!("{}.plexy-image-default", dst.display()));
     if !util::dry_run() {
         let _ = fs::rename(dst, &parked);
         move_path(src, dst)?;
@@ -897,6 +897,41 @@ fn backup_boot() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_move_merges_and_parks_conflicts() {
+        let t = std::env::temp_dir().join(format!("plexy-mv-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        let (src, dst) = (t.join("old/var"), t.join("new/var"));
+        fs::create_dir_all(src.join("lib/nginx")).unwrap();
+        fs::create_dir_all(src.join("log")).unwrap();
+        fs::write(src.join("lib/nginx/state"), "user").unwrap();
+        fs::write(src.join("log/app.log"), "old log").unwrap();
+        fs::create_dir_all(dst.join("log")).unwrap();
+        fs::write(dst.join("log/app.log"), "image default").unwrap();
+        fs::write(dst.join("log/other"), "keep").unwrap();
+        let mut j = MoveJournal::default();
+        for e in fs::read_dir(&src).unwrap().flatten() {
+            merge_move(&e.path(), &dst.join(e.file_name()), &mut j).unwrap();
+        }
+        assert_eq!(fs::read_to_string(dst.join("lib/nginx/state")).unwrap(), "user");
+        // user's version wins, image default is parked next to it
+        assert_eq!(fs::read_to_string(dst.join("log/app.log")).unwrap(), "old log");
+        assert_eq!(fs::read_to_string(dst.join("log/app.log.plexy-image-default")).unwrap(), "image default");
+        assert_eq!(fs::read_to_string(dst.join("log/other")).unwrap(), "keep");
+        assert!(!src.join("lib/nginx").exists());
+        assert_eq!(j.moves.len(), 2);
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn var_left_behind_policy() {
+        assert!(var_entry_left_behind("lib/dpkg"));
+        assert!(var_entry_left_behind("lib/rpm"));
+        assert!(var_entry_left_behind("lib/snapd"));
+        assert!(!var_entry_left_behind("lib/flatpak"));
+        assert!(!var_entry_left_behind("lib/postgresql"));
+    }
 
     #[test]
     fn fstab_translation() {

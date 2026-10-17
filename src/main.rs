@@ -377,7 +377,74 @@ fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, S
         }
         _ => {}
     }
+    // Meta-packages (cockpit, ubuntu-restricted-addons, ...) own no files of
+    // their own: classify them by what their direct dependencies ship.
+    let meta: Vec<String> = want
+        .iter()
+        .filter(|n| out.get(**n).map(|f| f.lines().all(|l| l.starts_with("/usr/share/doc") || l.starts_with("/usr/share/licenses") || l.trim().is_empty() || l.starts_with("/."))).unwrap_or(true))
+        .map(|n| n.to_string())
+        .collect();
+    for n in meta {
+        let mut files = String::new();
+        for dep in direct_deps(&m.packages.manager, &n) {
+            if let Some(f) = dep_files(&m.packages.manager, &dep) {
+                files.push_str(&f);
+            }
+        }
+        if !files.is_empty() {
+            out.entry(n).or_default().push_str(&files);
+        }
+    }
     Ok(out)
+}
+
+fn direct_deps(manager: &str, pkg: &str) -> Vec<String> {
+    match manager {
+        "apt" => {
+            let st = fs::read_to_string("/var/lib/dpkg/status").unwrap_or_default();
+            let mut in_pkg = false;
+            for l in st.lines() {
+                if let Some(p) = l.strip_prefix("Package: ") {
+                    in_pkg = p == pkg;
+                } else if in_pkg
+                    && let Some(d) = l.strip_prefix("Depends: ") {
+                        return d
+                            .split(',')
+                            .filter_map(|x| x.split_whitespace().next())
+                            .map(|x| x.split(':').next().unwrap_or(x).to_string())
+                            .collect();
+                    }
+            }
+            vec![]
+        }
+        _ => {
+            let reqs = util::try_run("rpm", &["-q", "--qf", "[%{REQUIRENAME}\n]", pkg]).unwrap_or_default();
+            let reqs: Vec<&str> = reqs.lines().filter(|r| !r.starts_with("rpmlib(") && !r.starts_with('/')).collect();
+            if reqs.is_empty() {
+                return vec![];
+            }
+            let mut args = vec!["-q", "--qf", "%{NAME}\n", "--whatprovides"];
+            args.extend(reqs);
+            let mut v: Vec<String> = util::try_run("rpm", &args)
+                .unwrap_or_default()
+                .lines()
+                .filter(|l| !l.contains(' '))
+                .map(str::to_string)
+                .collect();
+            v.sort();
+            v.dedup();
+            v
+        }
+    }
+}
+
+fn dep_files(manager: &str, pkg: &str) -> Option<String> {
+    match manager {
+        "apt" => fs::read_to_string(format!("/var/lib/dpkg/info/{pkg}.list"))
+            .or_else(|_| fs::read_to_string(format!("/var/lib/dpkg/info/{pkg}:amd64.list")))
+            .ok(),
+        _ => util::try_run("rpm", &["-ql", pkg]),
+    }
 }
 
 fn load_brew_index() -> BTreeMap<String, String> {
