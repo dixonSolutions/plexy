@@ -11,11 +11,16 @@
 #   EXPECT_FLATPAKS  flatpak app ids that must be installed
 #   EXPECT_MOUNTS    mount points that must be mounted
 #   EXPECT_GREP      "file:pattern" pairs (config content survived)
+#   EXPECT_WAITFILE  wait (up to 15 min) for this file first (e.g. first-login done)
+#   EXPECT_USERCMDS  user:command:args run as that user in a login shell
 pass=0 fail=0
 ok() { pass=$((pass + 1)); printf 'PASS  %s\n' "$*"; }
 ko() { fail=$((fail + 1)); printf 'FAIL  %s\n' "$*"; }
 chk() { desc=$1; shift; if "$@" >/dev/null 2>&1; then ok "$desc"; else ko "$desc"; fi; }
 
+if [ -n "$EXPECT_WAITFILE" ]; then
+  i=0; while [ ! -e "$EXPECT_WAITFILE" ] && [ $i -lt 180 ]; do sleep 5; i=$((i + 1)); done
+fi
 . /etc/os-release
 echo "== $PRETTY_NAME (kernel $(uname -r))"
 [ -n "$EXPECT_OS" ] && case "$PRETTY_NAME $NAME $VARIANT" in *"$EXPECT_OS"*) ok "os is $EXPECT_OS" ;; *) ko "os is $EXPECT_OS (got $PRETTY_NAME)" ;; esac
@@ -36,6 +41,10 @@ done
 for f in $EXPECT_FILES; do chk "file $f" test -s "$f"; done
 for c in $EXPECT_CMDS; do
   chk "command $c" sh -c "command -v $c || ls /var/home/*/.local/bin/$c /home/*/.local/bin/$c"
+done
+for uc in $EXPECT_USERCMDS; do
+  u=${uc%%:*} rest=${uc#*:} c=${rest%%:*} a=${rest#*:}
+  chk "as $u: $c $a" su - "$u" -c "export XDG_RUNTIME_DIR=/run/user/\$(id -u) PATH=\$HOME/.local/bin:\$PATH; $c $a"
 done
 for u in $EXPECT_ACTIVE; do chk "unit $u active" systemctl is-active --quiet "$u"; done
 for u in $EXPECT_ENABLED; do chk "unit $u enabled" systemctl is-enabled --quiet "$u"; done

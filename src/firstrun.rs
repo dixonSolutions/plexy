@@ -239,7 +239,16 @@ pub fn export_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usiz
             n += 1;
         }
         for d in &p.traits.desktop_files {
-            if Path::new("/usr/share/applications").join(d).exists() {
+            // The host already provides this app (as a package or a Flatpak).
+            let flatpak_user = home().join(".local/share/flatpak/exports/share/applications");
+            if [
+                Path::new("/usr/share/applications"),
+                Path::new("/var/lib/flatpak/exports/share/applications"),
+                flatpak_user.as_path(),
+            ]
+            .iter()
+            .any(|dir| dir.join(d).exists())
+            {
                 continue;
             }
             let inner = run(

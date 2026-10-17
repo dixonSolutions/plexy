@@ -676,7 +676,12 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                 }
             }
             Mode::Toolbox | Mode::Hybrid => {
-                if traits.host_level {
+                if traits.host_level && origin == "preinstalled" {
+                    p.why = format!(
+                        "system service shipped by {} but not by the target; layer it in the review if you use it",
+                        m.os.name
+                    );
+                } else if traits.host_level {
                     route_host(
                         &mut p,
                         "system-level (services/drivers/shell extensions must run on the host)",

@@ -28,19 +28,44 @@ EXPECT_FILES="/var/home/alice/Documents/thesis.txt /etc/dconf/db/local.d/00-plex
 EXPECT_CMDS="cockpit-bridge" EXPECT_ENABLED="cockpit.socket" EXPECT_FLATPAKS=org.gnome.Calculator
 EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=alice"'
 
+VM[ultramarine-bluefin-toolbox]=ultra1
+ARGS[ultramarine-bluefin-toolbox]="--target bluefin --mode toolbox"
+EXPECT[ultramarine-bluefin-toolbox]='EXPECT_OS=Bluefin EXPECT_USERS=alice EXPECT_GROUPS=alice:wheel
+EXPECT_FILES="/var/home/alice/Documents/thesis.txt" EXPECT_ENABLED="cockpit.socket"
+EXPECT_WAITFILE=/var/home/alice/.local/state/plexy/firstlogin.done
+EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version"'
+
 VM[ubuntu-bluefin]=ubu1
 SNAP[ubuntu-bluefin]=loaded-bluefin
 ARGS[ubuntu-bluefin]="--target bluefin --mode hybrid"
 EXPECT[ubuntu-bluefin]='EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
-EXPECT_FILES="/etc/tmux.conf" EXPECT_CMDS="nginx" EXPECT_ACTIVE="nginx.service"'
+EXPECT_FILES="/etc/tmux.conf /var/home/tester/Documents/notes.txt" EXPECT_CMDS="nginx" EXPECT_ACTIVE="nginx.service gdm.service sshd.service"
+EXPECT_FLATPAKS=org.mozilla.firefox EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=tester"'
 
 VM[ubuntu-vanilla]=ubu1
 SNAP[ubuntu-vanilla]=loaded-vanilla
 ARGS[ubuntu-vanilla]="--target vanilla --mode image --abroot-disk /dev/vdb"
 EXPECT[ubuntu-vanilla]='EXPECT_OS=Vanilla EXPECT_USERS=tester EXPECT_GROUPS=tester:sudo
-EXPECT_FILES="/etc/tmux.conf" EXPECT_CMDS="htop nginx" EXPECT_ACTIVE="nginx.service"'
+EXPECT_FILES="/etc/tmux.conf /home/tester/Documents/notes.txt" EXPECT_CMDS="htop nginx tmux" EXPECT_ACTIVE="nginx.service"
+EXPECT_GREP="/etc/gdm3/custom.conf:AutomaticLogin=tester"'
+
+VM[fedora-rollback]=fed1
+EXPECT[fedora-rollback]='EXPECT_OS="Cloud Edition" EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT_FILES="/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx"
+EXPECT_ACTIVE="nginx.service sshd.service chronyd.service"'
 
 vm=${VM[$scenario]:?unknown scenario}
+L_VERIFY() { "$L" scp "$vm" "$HERE/verify.sh" :/root/verify.sh
+    "$L" ssh "$vm" "env ${EXPECT[$scenario]//$'\n'/ } sh /root/verify.sh" | tee "$LAB/run/$scenario.verify.log"; }
+
+# fedora-rollback: run on an already-migrated fed1: roll back, reboot, verify the old system.
+if [[ $scenario == fedora-rollback ]]; then
+    "$L" ssh "$vm" 'mkdir -p /var/mnt/host; mountpoint -q /var/mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /var/mnt/host; /var/mnt/host/plexy rollback --yes --reboot' || true
+    sleep 30
+    "$L" wait "$vm" 600
+    L_VERIFY
+    exit
+fi
 "$L" kill "$vm" || true
 "$L" revert "$vm" "${SNAP[$scenario]:-loaded}"
 "$L" start "$vm"
