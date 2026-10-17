@@ -913,6 +913,44 @@ fn write_plan_dir(
     Ok(())
 }
 
+/// Packages layered on the booted deployment (rpm-ostree carries these
+/// requests across a rebase).
+fn requested_packages() -> BTreeSet<String> {
+    util::try_run("rpm-ostree", &["status", "--json", "--booted"])
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+        .and_then(|v| {
+            v.pointer("/deployments/0/requested-packages")
+                .and_then(|x| x.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+        })
+        .unwrap_or_default()
+}
+
+/// `rpm-ostree rebase` arguments: install only what is not already requested
+/// (rpm-ostree refuses "already requested"), and drop requests for packages
+/// the new image ships itself.
+fn rebase_args(
+    reference: &str,
+    want: &[String],
+    requested: &BTreeSet<String>,
+    target_base: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut args = vec!["rebase".to_string(), reference.to_string()];
+    for n in want.iter().filter(|n| !requested.contains(*n)) {
+        args.push("--install".into());
+        args.push(n.clone());
+    }
+    for n in requested.iter().filter(|n| target_base.contains(*n)) {
+        args.push("--uninstall".into());
+        args.push(n.clone());
+    }
+    args
+}
+
 /// ostree container reference for an image, signature-verified when asked
 /// (the policy for it ships in the image, e.g. Universal Blue's cosign key).
 pub fn ostree_ref(image: &str, signed: bool) -> String {
@@ -1104,14 +1142,14 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
     // On an image-based host /etc and /var already survive a switch (3-way merge).
     if p.layering == registry::Layering::Client && util::have("rpm-ostree") {
         // Follow the upstream remote directly; layered packages ride along.
-        let mut args = vec![
-            "rebase".to_string(),
-            ostree_ref(p.remote(), p.update_signed),
-        ];
-        for n in p.names_for(Dest::Image) {
-            args.push("--install".into());
-            args.push(n);
-        }
+        let requested = requested_packages();
+        let base: BTreeSet<String> = p.names_for(Dest::Base).into_iter().collect();
+        let args = rebase_args(
+            &ostree_ref(p.remote(), p.update_signed),
+            &p.names_for(Dest::Image),
+            &requested,
+            &base,
+        );
         util::run_visible("rpm-ostree", &args)?;
     } else if uses_derived(&p, &dir) {
         util::run_visible(
@@ -1181,4 +1219,51 @@ fn cleanup(yes: bool) -> Result<()> {
     }
     let _ = util::run("mount", &["-o", "remount,ro", "/sysroot"]);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rebase_keeps_existing_requests_and_drops_ones_the_target_ships() {
+        // Silverblue had htop, nginx, tmux layered; Bluefin ships htop and tmux.
+        let requested: BTreeSet<String> = ["htop", "nginx", "tmux"].map(String::from).into();
+        let base: BTreeSet<String> = ["htop", "tmux", "bash"].map(String::from).into();
+        let a = rebase_args(
+            "ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable",
+            &["nginx".to_string(), "cockpit".to_string()],
+            &requested,
+            &base,
+        );
+        assert_eq!(
+            a,
+            [
+                "rebase",
+                "ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable",
+                "--install",
+                "cockpit",
+                "--uninstall",
+                "htop",
+                "--uninstall",
+                "tmux"
+            ]
+        );
+        assert!(
+            !a.iter().any(|x| x == "nginx"),
+            "nginx is already requested"
+        );
+    }
+
+    #[test]
+    fn ostree_references() {
+        assert_eq!(
+            ostree_ref("quay.io/x/y:1", false),
+            "ostree-unverified-registry:quay.io/x/y:1"
+        );
+        assert_eq!(
+            ostree_ref("ghcr.io/a/b:c", true),
+            "ostree-image-signed:docker://ghcr.io/a/b:c"
+        );
+    }
 }

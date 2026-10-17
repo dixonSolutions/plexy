@@ -1231,11 +1231,21 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/plexy layer
-RemainAfterExit=yes
 TimeoutStartSec=0
+";
+
+/// Started once boot has settled: a live rpm-ostree apply during service
+/// startup starved other units (tuned timed out on a Silverblue lab guest).
+/// Ordering the service After=multi-user.target instead would be a cycle.
+pub const LAYER_TIMER: &str = "[Unit]
+Description=Plexy: layer your packages once boot has settled
+ConditionPathExists=!/var/lib/plexy/layer.done
+
+[Timer]
+OnBootSec=90s
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=timers.target
 ";
 
 /// Keeps a derived image (registry `layering = "image"`) following its
@@ -1330,12 +1340,17 @@ fn install_hooks(
             &root_join(deploy, "/etc/systemd/system/plexy-layer.service"),
             LAYER_UNIT,
         )?;
+        write_file(
+            &root_join(deploy, "/etc/systemd/system/plexy-layer.timer"),
+            LAYER_TIMER,
+        )?;
         let lw = root_join(
             deploy,
-            "/etc/systemd/system/multi-user.target.wants/plexy-layer.service",
+            "/etc/systemd/system/timers.target.wants/plexy-layer.timer",
         );
+        fs::create_dir_all(lw.parent().unwrap())?;
         let _ = fs::remove_file(&lw);
-        std::os::unix::fs::symlink("/etc/systemd/system/plexy-layer.service", &lw)?;
+        std::os::unix::fs::symlink("/etc/systemd/system/plexy-layer.timer", &lw)?;
     }
     let uwants = root_join(
         deploy,

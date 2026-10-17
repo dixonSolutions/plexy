@@ -99,7 +99,7 @@ updates is set per target in the registry (`layering`):
 
 | layering | targets | what `bootc status` shows | packages you had |
 |---|---|---|---|
-| `client` | Bluefin, Aurora, Bazzite, Silverblue, Kinoite, COSMIC | the upstream image, e.g. `ghcr.io/ublue-os/bluefin:stable`; signed targets are rebased to `ostree-image-signed:docker://…` (the image's own cosign policy) | layered with `rpm-ostree` on first boot by `plexy-layer.service`, kept across every `rpm-ostree upgrade` |
+| `client` | Bluefin, Aurora, Bazzite, Silverblue, Kinoite, COSMIC | the upstream image, e.g. `ghcr.io/ublue-os/bluefin:stable`; signed targets are rebased to `ostree-image-signed:docker://…` (the image's own cosign policy) | layered with `rpm-ostree` by `plexy-layer.service` (started by a timer ~90 s after the first boot, retried on later boots until it succeeds), kept across every `rpm-ostree upgrade` |
 | `image` | fedora-bootc (servers) | `localhost/plexy/…` built `FROM` the remote | baked into the derived image; `plexy update` / `plexy-update.timer` (weekly) rebuilds it when the remote's digest changes and stages it with `bootc upgrade` |
 | `abroot` | Vanilla OS | the ABRoot image (`abroot.json`) | `/etc/abroot/packages.add`, reinstalled at every `abroot upgrade` |
 

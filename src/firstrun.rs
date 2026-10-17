@@ -179,7 +179,23 @@ pub fn layer() -> Result<()> {
         info("nothing to layer client-side");
         return Ok(());
     }
-    let report = layer_client_side(&plan);
+    let failed_before = failed_units();
+    let mut report = layer_client_side(&plan);
+    // A live apply reloads systemd and can make units that were starting
+    // time out; give anything that failed meanwhile a clean restart.
+    let mut restarted = vec![];
+    for u in failed_units().difference(&failed_before) {
+        let _ = run("systemctl", &["reset-failed", u]);
+        if run("systemctl", &["restart", u]).is_ok() {
+            restarted.push(u.clone());
+        }
+    }
+    if !restarted.is_empty() {
+        report.push(format!(
+            "restarted units that failed during layering: {}",
+            restarted.join(" ")
+        ));
+    }
     let failed = report.iter().any(|l| l.contains("could not"));
     let log = Path::new(STATE).join("layer.log");
     write_file(&log, report.join("\n") + "\n")?;
@@ -197,6 +213,17 @@ pub fn layer() -> Result<()> {
         util::now_unix().to_string(),
     )?;
     Ok(())
+}
+
+fn failed_units() -> std::collections::BTreeSet<String> {
+    try_run(
+        "systemctl",
+        &["--failed", "--no-legend", "--plain", "--type=service"],
+    )
+    .unwrap_or_default()
+    .lines()
+    .filter_map(|l| l.split_whitespace().next().map(str::to_string))
+    .collect()
 }
 
 /// Client-side layering (registry `layering = "client"`): the system runs the
