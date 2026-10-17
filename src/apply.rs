@@ -988,9 +988,13 @@ fn relabel(plan: &Plan, deploy: &Path, var_dirs: &[(PathBuf, &str)]) -> Result<(
         args.push(format!("{}:/target{}", host.display(), inner));
         paths.push(format!("/target{inner}"));
     }
-    args.push("--entrypoint".into());
+    // Run setfiles from the new deployment's own tree: the image may no longer
+    // be in container storage (/var/lib/containers just moved with /var).
+    let _ = &plan.target_image;
+    args.push("--rootfs".into());
+    // :O = overlay, so mount points are not created inside the deployment
+    args.push(format!("{}:O", deploy.display()));
     args.push("/usr/sbin/setfiles".into());
-    args.push(plan.target_image.clone());
     args.extend(
         [
             "-F",
