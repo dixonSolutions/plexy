@@ -159,6 +159,67 @@ fn data_size_mib() -> u64 {
 
 /// Create the ABRoot partitions. `spec` is a whole disk to dedicate
 /// (`/dev/vdb`) or `free:/dev/vda` to use unpartitioned space on a disk.
+/// `key=value` lines of one `[section]` of an INI file (comments dropped).
+fn ini_section(text: &str, section: &str) -> Vec<(String, String)> {
+    let mut cur = String::new();
+    text.lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            if let Some(name) = l.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+                cur = name.trim().to_string();
+                return None;
+            }
+            if cur != section || l.starts_with('#') || l.starts_with(';') {
+                return None;
+            }
+            let (k, v) = l.split_once('=')?;
+            Some((k.trim().to_string(), v.trim().to_string()))
+        })
+        .collect()
+}
+
+/// Set `kvs` in `[section]` of `text`, replacing existing keys (commented
+/// examples stay), appending the section if it is missing.
+fn merge_ini_section(text: &str, section: &str, kvs: &[(String, String)]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let (mut cur, mut found, mut done) = (String::new(), false, false);
+    let flush = |out: &mut Vec<String>| {
+        for (k, v) in kvs {
+            out.push(format!("{k}={v}"));
+        }
+    };
+    for l in text.lines() {
+        let t = l.trim();
+        if let Some(name) = t.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+            if cur == section && !done {
+                flush(&mut out);
+                done = true;
+            }
+            cur = name.trim().to_string();
+            if cur == section {
+                found = true;
+            }
+            out.push(l.to_string());
+            continue;
+        }
+        if cur == section
+            && !t.starts_with('#')
+            && let Some((k, _)) = t.split_once('=')
+            && kvs.iter().any(|(kk, _)| kk == k.trim())
+        {
+            continue;
+        }
+        out.push(l.to_string());
+    }
+    if cur == section && !done {
+        flush(&mut out);
+    } else if !found {
+        out.push(format!("[{section}]"));
+        flush(&mut out);
+    }
+    out.join("\n") + "\n"
+}
+
 /// Shell run in root A to build the initramfs for `kver`; exits non-zero
 /// (with update-initramfs's own output) when that fails.
 fn initramfs_script(kver: &str) -> String {
@@ -610,6 +671,10 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
             let _ = std::os::unix::fs::chown(root_join(&a, p), Some(0), Some(g.gid));
         }
     }
+    // Debian's gdm3 reads /etc/gdm3/daemon.conf; Ubuntu's reads custom.conf.
+    // Decide from what the image ships, before carrying any config.
+    let gdm_reads_daemon_conf =
+        a.join("etc/gdm3/daemon.conf").exists() && !a.join("etc/gdm3/custom.conf").exists();
     let mut n = 0;
     for c in plan
         .configs
@@ -636,6 +701,18 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         let d = a.join("etc/localtime");
         let _ = fs::remove_file(&d);
         std::os::unix::fs::symlink(tz, d)?;
+    }
+    let custom = a.join("etc/gdm3/custom.conf");
+    if gdm_reads_daemon_conf && custom.exists() {
+        let daemon = a.join("etc/gdm3/daemon.conf");
+        let merged = merge_ini_section(
+            &read_opt(&daemon).unwrap_or_default(),
+            "daemon",
+            &ini_section(&read_opt(&custom).unwrap_or_default(), "daemon"),
+        );
+        write_file(&daemon, merged)?;
+        fs::remove_file(&custom)?;
+        info("  GDM settings merged into /etc/gdm3/daemon.conf (the file this gdm3 reads)");
     }
     info(format!("  {n} config files carried"));
     let dstr = a.display().to_string();
@@ -874,6 +951,25 @@ mod tests {
         assert!(!d("b.conf"));
         assert!(!d("c.conf"));
         let _ = fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn gdm_settings_merge_into_daemon_conf() {
+        let custom = "[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=tester\n\n[security]\n";
+        let daemon = "# GDM\n[daemon]\n#  AutomaticLogin = user1\nWaylandEnable=false\n\n[security]\n\n[debug]\n";
+        let kv = ini_section(custom, "daemon");
+        assert_eq!(kv.len(), 2);
+        let m = merge_ini_section(daemon, "daemon", &kv);
+        assert_eq!(ini_section(&m, "daemon").len(), 3);
+        assert!(
+            m.contains("AutomaticLogin=tester\n\n[security]")
+                || m.contains("AutomaticLogin=tester\n[security]")
+        );
+        assert!(m.contains("#  AutomaticLogin = user1"));
+        assert!(
+            merge_ini_section("[debug]\n", "daemon", &kv)
+                .ends_with("[daemon]\nAutomaticLoginEnable=True\nAutomaticLogin=tester\n")
+        );
     }
 
     #[test]
