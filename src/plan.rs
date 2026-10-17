@@ -397,6 +397,7 @@ pub fn etc_portable(path: &str) -> bool {
         "/etc/vimrc",
         "/etc/inputrc",
         "/etc/gdm/custom.conf",
+        "/etc/gdm3/custom.conf",
         "/etc/sddm.conf",
         "/etc/wgetrc",
         "/etc/gitconfig",
@@ -874,14 +875,15 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         .system
         .enabled_units
         .iter()
-        // across families the target's own presets decide systemd's units
-        // (Ubuntu's systemd-networkd would fight Fedora's NetworkManager)
-        .filter(|u| from == to || !u.starts_with("systemd-"))
+        // across platforms the target's own presets decide systemd's units
+        // (Ubuntu's systemd-networkd would fight Fedora's or Vanilla's
+        // NetworkManager; systemd-networkd-wait-online then fails at boot)
+        .filter(|u| same_platform || !u.starts_with("systemd-"))
         .map(|u| translate_unit(u, from, to))
         .collect();
     units_to_enable.sort();
     units_to_enable.dedup();
-    let units_to_disable: Vec<String> = if from == to {
+    let units_to_disable: Vec<String> = if same_platform {
         m.system
             .disabled_units
             .iter()
@@ -1210,6 +1212,25 @@ pub fn load(path: &std::path::Path) -> Result<Plan> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gdm_autologin_is_portable_between_debian_platforms() {
+        assert!(etc_portable_any(
+            "/etc/gdm3/custom.conf",
+            Family::Debian,
+            Family::Debian
+        ));
+        assert!(etc_portable_any(
+            "/etc/gdm3/custom.conf",
+            Family::Debian,
+            Family::Fedora
+        ));
+        assert!(!etc_portable_any(
+            "/etc/pam.d/common-auth",
+            Family::Debian,
+            Family::Debian
+        ));
+    }
+
     use super::*;
 
     #[test]
