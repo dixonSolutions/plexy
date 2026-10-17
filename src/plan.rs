@@ -313,7 +313,7 @@ pub fn etc_denied(path: &str) -> bool {
         "/etc/logrotate.d/apt",
         "/etc/kernel-img.conf",
         "/etc/default/apport",
-        "/etc/snap",
+        "/etc/snap/",
         "/etc/profile.d/apps-bin-path.sh",
         "/etc/rc",
         "/etc/init.d/",
@@ -343,6 +343,15 @@ pub fn etc_denied(path: &str) -> bool {
         "/etc/plymouth/",
         "/etc/crypto-policies/back-ends/",
     ];
+    // Snaps do not exist on the targets: their mount units, udev rules and
+    // services would only fail.
+    if path.contains("snapd")
+        || path.starts_with("/etc/systemd/system/snap")
+        || path.contains("/snap.")
+        || path.starts_with("/etc/udev/rules.d/70-snap")
+    {
+        return true;
+    }
     // Enablement symlinks are recreated by replaying unit state on the target;
     // copying them would resurrect units that do not exist there.
     if [".wants/", ".requires/", ".upholds/"]
@@ -440,6 +449,11 @@ pub fn etc_portable(path: &str) -> bool {
         "/etc/opt/",
     ];
     EXACT.contains(&path) || PREFIX.iter().any(|p| path.starts_with(p))
+}
+
+/// Portable either as written or once translated (/etc/gdm3/ -> /etc/gdm/).
+pub fn etc_portable_any(path: &str, from: Family, to: Family) -> bool {
+    etc_portable(path) || etc_portable(&etc_translate(path, from, to))
 }
 
 /// Translate a source path to its location on the target distribution.
@@ -752,7 +766,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     pc.action = ConfigAction::Brew;
                     pc.why = "config of a tool moved to Homebrew".into();
                 }
-                Dest::Skip if from != to && !etc_portable(&c.path) => {
+                Dest::Skip if from != to && !etc_portable_any(&c.path, from, to) => {
                     pc.why = "package not migrated".into();
                 }
                 _ => {
@@ -760,7 +774,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     pc.why = "local modification".into();
                 }
             }
-        } else if from == to || etc_portable(&c.path) {
+        } else if from == to || etc_portable_any(&c.path, from, to) {
             pc.action = ConfigAction::Etc;
             pc.why = match c.kind {
                 ConfigKind::Unowned => "created locally".into(),
@@ -851,6 +865,9 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         .system
         .enabled_units
         .iter()
+        // across families the target's own presets decide systemd's units
+        // (Ubuntu's systemd-networkd would fight Fedora's NetworkManager)
+        .filter(|u| from == to || !u.starts_with("systemd-"))
         .map(|u| translate_unit(u, from, to))
         .collect();
     units_to_enable.sort();
@@ -1205,6 +1222,14 @@ mod tests {
         assert!(etc_denied("/etc/dconf/db/local"));
         assert!(!etc_denied("/etc/dconf/db/local.d/00-custom"));
         assert!(etc_denied("/etc/authselect/system-auth"));
+        assert!(etc_denied("/etc/systemd/system/snap-firefox-9057.mount"));
+        assert!(etc_denied("/etc/systemd/system/snapd.service.d/x.conf"));
+        assert!(!etc_denied("/etc/snapper/configs/root"));
+        assert!(etc_portable_any(
+            "/etc/gdm3/custom.conf",
+            Family::Debian,
+            Family::Fedora
+        ));
         assert!(etc_portable(
             "/etc/NetworkManager/system-connections/home.nmconnection"
         ));

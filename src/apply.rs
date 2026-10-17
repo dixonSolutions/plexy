@@ -384,7 +384,28 @@ fn merge_move(src: &Path, dst: &Path, journal: &mut MoveJournal) -> Result<()> {
     Ok(())
 }
 
-fn move_data(layout: &DataLayout, journal: &mut MoveJournal) -> Result<()> {
+/// Where a /var entry goes on a target of another family: Debian keeps mail
+/// in /var/mail (with spool/mail a symlink), Fedora the other way round.
+pub fn var_rel_for_target(rel: &str, from: Family, to: Family) -> String {
+    match (from, to) {
+        (Family::Debian, Family::Fedora) => match rel.strip_prefix("mail/") {
+            Some(r) => format!("spool/mail/{r}"),
+            None => rel.to_string(),
+        },
+        (Family::Fedora, Family::Debian) => match rel.strip_prefix("spool/mail/") {
+            Some(r) => format!("mail/{r}"),
+            None => rel.to_string(),
+        },
+        _ => rel.to_string(),
+    }
+}
+
+fn move_data(
+    layout: &DataLayout,
+    journal: &mut MoveJournal,
+    from: Family,
+    to: Family,
+) -> Result<()> {
     let nv = &layout.new_var;
     if !layout.var_mounted {
         step(format!("moving /var contents into {}", nv.display()));
@@ -404,6 +425,27 @@ fn move_data(layout: &DataLayout, journal: &mut MoveJournal) -> Result<()> {
                 for sub in fs::read_dir(&p)?.flatten() {
                     let rel = format!("{name}/{}", sub.file_name().to_string_lossy());
                     if var_entry_left_behind(&rel) || var_entry_left_behind(&name) {
+                        continue;
+                    }
+                    // Symlinks in /var are distribution layout (spool/mail ->
+                    // ../mail on Debian), not data; the target creates its own.
+                    if fs::symlink_metadata(sub.path())
+                        .map(|m| m.file_type().is_symlink())
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    if rel == "mail" || rel == "spool/mail" {
+                        // move the mailboxes, not the directory, so they land in
+                        // the target's real mail spool
+                        for mb in fs::read_dir(sub.path())?.flatten() {
+                            let mrel = format!("{rel}/{}", mb.file_name().to_string_lossy());
+                            merge_move(
+                                &mb.path(),
+                                &nv.join(var_rel_for_target(&mrel, from, to)),
+                                journal,
+                            )?;
+                        }
                         continue;
                     }
                     merge_move(&sub.path(), &nv.join(&rel), journal)?;
@@ -1106,7 +1148,12 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
         old_os: m.os.pretty_name.clone(),
         ..Default::default()
     };
-    move_data(&layout, &mut journal)?;
+    move_data(
+        &layout,
+        &mut journal,
+        plan.source_family,
+        plan.target_family,
+    )?;
     install_hooks(plan, &deploy, &layout.new_var, staging)?;
 
     let mut extra = vec![];
@@ -1247,6 +1294,22 @@ mod tests {
         assert!(!src.join("lib/nginx").exists());
         assert_eq!(j.moves.len(), 2);
         fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn mail_spool_mapping() {
+        assert_eq!(
+            var_rel_for_target("mail/bob", Family::Debian, Family::Fedora),
+            "spool/mail/bob"
+        );
+        assert_eq!(
+            var_rel_for_target("spool/mail/bob", Family::Fedora, Family::Debian),
+            "mail/bob"
+        );
+        assert_eq!(
+            var_rel_for_target("lib/nginx", Family::Debian, Family::Fedora),
+            "lib/nginx"
+        );
     }
 
     #[test]
