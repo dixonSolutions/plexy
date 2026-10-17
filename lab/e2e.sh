@@ -14,7 +14,7 @@ L="$HERE/lab.sh"
 scenario=${1:?scenario}
 record=${2:-}
 
-declare -A VM ARGS EXPECT
+declare -A VM ARGS EXPECT SNAP
 VM[fedora-silverblue]=fed1
 ARGS[fedora-silverblue]="--target silverblue --mode image"
 EXPECT[fedora-silverblue]='EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
@@ -29,18 +29,20 @@ EXPECT_CMDS="cockpit-bridge" EXPECT_ENABLED="cockpit.socket" EXPECT_FLATPAKS=org
 EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=alice"'
 
 VM[ubuntu-bluefin]=ubu1
+SNAP[ubuntu-bluefin]=loaded-bluefin
 ARGS[ubuntu-bluefin]="--target bluefin --mode hybrid"
 EXPECT[ubuntu-bluefin]='EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/etc/tmux.conf" EXPECT_CMDS="nginx" EXPECT_ACTIVE="nginx.service"'
 
 VM[ubuntu-vanilla]=ubu1
+SNAP[ubuntu-vanilla]=loaded-vanilla
 ARGS[ubuntu-vanilla]="--target vanilla --mode image --abroot-disk /dev/vdb"
 EXPECT[ubuntu-vanilla]='EXPECT_OS=Vanilla EXPECT_USERS=tester EXPECT_GROUPS=tester:sudo
 EXPECT_FILES="/etc/tmux.conf" EXPECT_CMDS="htop nginx" EXPECT_ACTIVE="nginx.service"'
 
 vm=${VM[$scenario]:?unknown scenario}
 "$L" kill "$vm" || true
-"$L" revert "$vm" loaded
+"$L" revert "$vm" "${SNAP[$scenario]:-loaded}"
 "$L" start "$vm"
 "$L" wait "$vm" 300
 "$L" ssh "$vm" 'mkdir -p /mnt/host; mountpoint -q /mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /mnt/host; install -m755 /mnt/host/plexy /usr/local/bin/plexy'

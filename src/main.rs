@@ -347,10 +347,7 @@ fn print_scan_summary(m: &manifest::Manifest) {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    println!(
-        "  services : {} enabled",
-        m.system.enabled_units.len()
-    );
+    println!("  services : {} enabled", m.system.enabled_units.len());
     if let Some(f) = &m.wrappers.flatpak {
         println!(
             "  flatpak  : {} system apps, remotes: {}",

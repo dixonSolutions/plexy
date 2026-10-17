@@ -1043,7 +1043,21 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     info(format!("new deployment: {}", deploy.display()));
     let layout = plan_data_layout(m, &stateroot_var);
 
-    // fstab: bootc wrote /boot; append data mounts.
+    // fstab: bootc writes /boot only when the old entry was UUID-based
+    // (Ubuntu uses LABEL=BOOT); without it `bootc upgrade` cannot write /boot.
+    if !util::dry_run() {
+        let p = root_join(&deploy, "/etc/fstab");
+        let mut cur = util::read_opt(&p).unwrap_or_default();
+        let has_boot = cur
+            .lines()
+            .any(|l| l.split_whitespace().nth(1) == Some("/boot"));
+        if let (true, false, Some(line)) = (m.boot.boot_separate, has_boot, boot_fstab_line()) {
+            info(format!("adding {line}"));
+            cur.push_str(&line);
+            cur.push('\n');
+        }
+        write_file(&p, &cur)?;
+    }
     if !layout.fstab.is_empty() && !util::dry_run() {
         let p = root_join(&deploy, "/etc/fstab");
         let mut cur = util::read_opt(&p).unwrap_or_default();
@@ -1116,6 +1130,15 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
         run("systemctl", &["reboot"])?;
     }
     Ok(())
+}
+
+/// fstab line for the separate /boot filesystem, by UUID, read-only like
+/// the entries bootc writes itself.
+fn boot_fstab_line() -> Option<String> {
+    let out = try_run("findmnt", &["-n", "-o", "UUID,FSTYPE", "/boot"])?;
+    let mut f = out.split_whitespace();
+    let (uuid, fstype) = (f.next()?, f.next()?);
+    Some(format!("UUID={uuid} /boot {fstype} defaults,ro 0 0"))
 }
 
 fn backup_boot() -> Result<()> {
