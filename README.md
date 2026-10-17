@@ -92,6 +92,60 @@ desktop from the target image's session files and **refuses** a target with a di
 (override: `--allow-desktop-change`). `--target auto` picks a matching image: GNOME → Bluefin /
 Silverblue, KDE → Aurora / Kinoite, COSMIC → COSMIC Atomic, headless → fedora-bootc.
 
+### Updates follow the real upstream remote
+
+A migrated system is updated by its distribution, not by Plexy. How layered packages survive those
+updates is set per target in the registry (`layering`):
+
+| layering | targets | what `bootc status` shows | packages you had |
+|---|---|---|---|
+| `client` | Bluefin, Aurora, Bazzite, Silverblue, Kinoite, COSMIC | the upstream image, e.g. `ghcr.io/ublue-os/bluefin:stable`; signed targets are rebased to `ostree-image-signed:docker://…` (the image's own cosign policy) | layered with `rpm-ostree` on first boot by `plexy-layer.service`, kept across every `rpm-ostree upgrade` |
+| `image` | fedora-bootc (servers) | `localhost/plexy/…` built `FROM` the remote | baked into the derived image; `plexy update` / `plexy-update.timer` (weekly) rebuilds it when the remote's digest changes and stages it with `bootc upgrade` |
+| `abroot` | Vanilla OS | the ABRoot image (`abroot.json`) | `/etc/abroot/packages.add`, reinstalled at every `abroot upgrade` |
+
+> The lab results below predate client-side layering: they used a derived image for every target.
+> Client-side layering and the signed rebase are covered by unit tests and checked against a native
+> Bluefin's origin, but have not yet been re-run end to end.
+
+`plexy update` explains the method on any migrated system. `--customize` needs a derived image, so
+it switches a `client` target to `image` layering.
+
+### Target registry
+
+The OSes Plexy can migrate to, how each one updates, and which conversions are available from which
+sources live in config files, not code: [`registry/targets.toml`](registry/targets.toml) is built in,
+and `*.toml` files in `/etc/plexy/targets.d/` or `~/.config/plexy/targets.d/` add targets or replace
+built-in ones by `id`:
+
+```toml
+[[target]]
+id = "my-desktop"
+name = "My company desktop"
+image = "ghcr.io/acme/desktop:latest"
+backend = "bootc"            # bootc | abroot
+family = "fedora"            # package family of the image
+desktop = "gnome"            # expected desktop (the image is still inspected)
+[target.update]
+remote = "ghcr.io/acme/desktop:stable"   # what the installed system follows
+signed = true                # rebase to ostree-image-signed (policy ships in the image)
+layering = "client"          # client | image | abroot
+[[target.conversion]]
+from = ["fedora", "family:debian"]       # os-release IDs / VARIANT_IDs, or families
+source = "mutable"           # mutable (migrate) | image-based (switch) | any
+modes = ["image", "hybrid"]
+status = "untested"          # verified | untested | unsupported (refused, with notes)
+```
+
+```console
+$ plexy targets                      # the registry and each target's update remote
+$ plexy targets --from auto          # conversions available from this machine
+$ plexy targets --from ubuntu        # ... or from any source distribution
+$ plexy targets --files              # which registry files were loaded
+```
+
+`--target auto` takes the registry's candidates for your desktop, verified conversions first.
+Unsupported conversions are refused; untested ones are allowed with a warning in the plan.
+
 ## Usage
 
 ```sh
@@ -112,6 +166,7 @@ sudo plexy migrate --target vanilla --abroot-disk free:/dev/sda   # unpartitione
 # afterwards, on the new system
 plexy export                  # re-export toolbox apps/commands
 sudo plexy rollback --reboot  # changed your mind: back to the previous OS (bootc backend)
+sudo plexy update             # derived images: rebuild from the upstream remote when it changed
 sudo plexy cleanup            # delete the previous OS from /sysroot once you're happy
 # already image-based? switch images and keep layered packages:
 sudo plexy switch --target aurora

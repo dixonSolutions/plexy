@@ -1,10 +1,10 @@
 //! Target images.
 //!
-//! The catalog below is only a convenience list of well-known names → image
-//! references. Nothing about a target's *contents* is hard-coded: its package
-//! set, desktop, accounts and tooling are read from the image itself by
-//! `inspect()`, so any bootc-compatible or ABRoot image can be used via
-//! `--image <ref>`.
+//! Well-known targets, their update remotes and available conversions live in
+//! the registry (`registry/targets.toml`, see `crate::registry`). Nothing about
+//! a target's *contents* is hard-coded: its package set, desktop, accounts and
+//! tooling are read from the image itself by `inspect()`, so any bootc or
+//! ABRoot image can be used via `--target <ref>`.
 
 use crate::desktop::{self, DesktopInfo};
 use crate::os::Family;
@@ -20,96 +20,6 @@ pub enum Backend {
     Bootc,
     /// Vanilla OS ABRoot: A/B root partitions + shared var partition.
     Abroot,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CatalogEntry {
-    pub id: &'static str,
-    pub image: &'static str,
-    pub backend: Backend,
-    pub summary: &'static str,
-}
-
-pub const CATALOG: &[CatalogEntry] = &[
-    CatalogEntry {
-        id: "bluefin",
-        image: "ghcr.io/ublue-os/bluefin:stable",
-        backend: Backend::Bootc,
-        summary: "Universal Blue Bluefin (GNOME), Homebrew + distrobox preinstalled",
-    },
-    CatalogEntry {
-        id: "bluefin-dx",
-        image: "ghcr.io/ublue-os/bluefin-dx:stable",
-        backend: Backend::Bootc,
-        summary: "Bluefin developer edition (GNOME, containers/VMs tooling)",
-    },
-    CatalogEntry {
-        id: "bluefin-nvidia",
-        image: "ghcr.io/ublue-os/bluefin-nvidia-open:stable",
-        backend: Backend::Bootc,
-        summary: "Bluefin with NVIDIA open kernel modules",
-    },
-    CatalogEntry {
-        id: "aurora",
-        image: "ghcr.io/ublue-os/aurora:stable",
-        backend: Backend::Bootc,
-        summary: "Universal Blue Aurora (KDE Plasma)",
-    },
-    CatalogEntry {
-        id: "aurora-nvidia",
-        image: "ghcr.io/ublue-os/aurora-nvidia-open:stable",
-        backend: Backend::Bootc,
-        summary: "Aurora with NVIDIA open kernel modules",
-    },
-    CatalogEntry {
-        id: "bazzite",
-        image: "ghcr.io/ublue-os/bazzite:stable",
-        backend: Backend::Bootc,
-        summary: "Bazzite gaming (KDE Plasma)",
-    },
-    CatalogEntry {
-        id: "bazzite-gnome",
-        image: "ghcr.io/ublue-os/bazzite-gnome:stable",
-        backend: Backend::Bootc,
-        summary: "Bazzite gaming (GNOME)",
-    },
-    CatalogEntry {
-        id: "silverblue",
-        image: "quay.io/fedora/fedora-silverblue:44",
-        backend: Backend::Bootc,
-        summary: "Fedora Silverblue (GNOME)",
-    },
-    CatalogEntry {
-        id: "kinoite",
-        image: "quay.io/fedora/fedora-kinoite:44",
-        backend: Backend::Bootc,
-        summary: "Fedora Kinoite (KDE Plasma)",
-    },
-    CatalogEntry {
-        id: "cosmic-atomic",
-        image: "quay.io/fedora-ostree-desktops/cosmic-atomic:44",
-        backend: Backend::Bootc,
-        summary: "Fedora COSMIC Atomic",
-    },
-    CatalogEntry {
-        id: "fedora-bootc",
-        image: "quay.io/fedora/fedora-bootc:44",
-        backend: Backend::Bootc,
-        summary: "Fedora bootc base (headless servers)",
-    },
-    CatalogEntry {
-        id: "vanilla",
-        image: "ghcr.io/vanilla-os/gnome:latest",
-        backend: Backend::Abroot,
-        summary: "Vanilla OS (GNOME, Debian-based) on ABRoot A/B partitions",
-    },
-];
-
-pub fn resolve(name_or_ref: &str) -> (String, Option<Backend>) {
-    match CATALOG.iter().find(|c| c.id == name_or_ref) {
-        Some(c) => (c.image.to_string(), Some(c.backend)),
-        None => (name_or_ref.to_string(), None),
-    }
 }
 
 /// Facts read out of a target image.
@@ -131,6 +41,10 @@ pub struct ImageFacts {
     pub has_flatpak: bool,
     /// Homebrew is bundled (Universal Blue unpacks it on first boot).
     pub has_brew: bool,
+    /// rpm-ostree is present: packages can be layered client-side on top of
+    /// the upstream image, so the system can follow the upstream remote.
+    #[serde(default)]
+    pub has_rpm_ostree: bool,
     pub bootc_label: bool,
     pub selinux: bool,
 }
@@ -258,6 +172,7 @@ pub fn parse_facts(out: &str) -> ImageFacts {
                 "toolbox" => f.has_toolbox = true,
                 "flatpak" => f.has_flatpak = true,
                 "brew" | "brew-bundle" => f.has_brew = true,
+                "rpm-ostree" => f.has_rpm_ostree = true,
                 "selinux" => f.selinux = true,
                 _ => {}
             },
@@ -302,19 +217,6 @@ pub fn parse_facts(out: &str) -> ImageFacts {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn catalog_ids_unique_and_resolve() {
-        let mut ids: Vec<_> = CATALOG.iter().map(|c| c.id).collect();
-        ids.sort();
-        ids.dedup();
-        assert_eq!(ids.len(), CATALOG.len());
-        assert_eq!(resolve("bluefin").0, "ghcr.io/ublue-os/bluefin:stable");
-        assert_eq!(
-            resolve("quay.io/x/y:1"),
-            ("quay.io/x/y:1".to_string(), None)
-        );
-    }
 
     #[test]
     fn probe_output_parsing() {

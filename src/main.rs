@@ -12,6 +12,7 @@ mod mapping;
 mod os;
 mod pkg;
 mod plan;
+mod registry;
 mod rollback;
 mod state;
 mod target;
@@ -72,8 +73,20 @@ enum Cmd {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
-    /// List well-known targets (any image reference also works).
-    Targets,
+    /// List the target registry: OSes, how they update, and which
+    /// conversions are available (from this system with `--from auto`).
+    Targets {
+        /// Show conversions available from a source: an os-release id
+        /// (ubuntu, fedora, ultramarine, silverblue, ...) or `auto` for this system.
+        #[arg(long)]
+        from: Option<String>,
+        /// With --from <id>: the source is already image-based (plexy switch).
+        #[arg(long)]
+        image_based: bool,
+        /// Show which registry files were loaded.
+        #[arg(long)]
+        files: bool,
+    },
     /// Read a target image's facts: desktop, package count, tooling.
     Inspect { image: String },
     /// Compare this system against a target: what is already there, what is
@@ -151,6 +164,17 @@ enum Cmd {
     /// (internal) first-boot stage, run by plexy-firstboot.service.
     #[command(hide = true)]
     Firstboot,
+    /// Follow the upstream remote: rebuild a derived system image when its
+    /// remote changed (run weekly by plexy-update.timer), or explain how this
+    /// system updates.
+    Update {
+        /// Rebuild even if the remote is unchanged.
+        #[arg(long)]
+        force: bool,
+    },
+    /// (internal) layer packages client-side, run by plexy-layer.service.
+    #[command(hide = true)]
+    Layer,
     /// (internal) first-login stage, run by the plexy-firstlogin user service.
     #[command(hide = true)]
     Firstlogin,
@@ -180,27 +204,14 @@ fn real_main(cli: Cli) -> Result<()> {
                 None => println!("{js}"),
             }
         }
-        Cmd::Targets => {
-            println!(
-                "{:<16} {:<8} {:<48} DESCRIPTION",
-                "NAME", "BACKEND", "IMAGE"
-            );
-            for c in target::CATALOG {
-                println!(
-                    "{:<16} {:<8} {:<48} {}",
-                    c.id,
-                    format!("{:?}", c.backend).to_lowercase(),
-                    c.image,
-                    c.summary
-                );
-            }
-            println!(
-                "\nAny bootc image reference works too, e.g. --target ghcr.io/you/custom:latest"
-            );
-            println!("`--target auto` picks a catalog image whose desktop matches yours.");
-        }
+        Cmd::Targets {
+            from,
+            image_based,
+            files,
+        } => print_targets(from.as_deref(), image_based, files)?,
         Cmd::Inspect { image } => {
-            let (img, _) = target::resolve(&image);
+            let reg = registry::Registry::load()?;
+            let (img, entry) = reg.resolve(&image);
             let f = target::inspect(&img)?;
             println!("image     : {}", f.image);
             println!("os        : {} ({:?})", f.pretty_name, f.family);
@@ -215,9 +226,24 @@ fn real_main(cli: Cli) -> Result<()> {
             );
             println!("packages  : {}", f.packages.len());
             println!(
-                "tools     : distrobox={} toolbox={} flatpak={} brew={} selinux={}",
-                f.has_distrobox, f.has_toolbox, f.has_flatpak, f.has_brew, f.selinux
+                "tools     : distrobox={} toolbox={} flatpak={} brew={} rpm-ostree={} selinux={}",
+                f.has_distrobox,
+                f.has_toolbox,
+                f.has_flatpak,
+                f.has_brew,
+                f.has_rpm_ostree,
+                f.selinux
             );
+            if let Some(t) = entry {
+                println!(
+                    "registry  : {} — updates from {}{}, layering: {:?} ({})",
+                    t.id,
+                    t.remote(),
+                    if t.update.signed { " (signed)" } else { "" },
+                    t.update.layering,
+                    t.origin
+                );
+            }
         }
         Cmd::Diff { t } => {
             let m = manifest::scan()?;
@@ -307,6 +333,8 @@ fn real_main(cli: Cli) -> Result<()> {
         }
         Cmd::Firstboot => firstrun::firstboot()?,
         Cmd::Firstlogin => firstrun::firstlogin()?,
+        Cmd::Layer => firstrun::layer()?,
+        Cmd::Update { force } => firstrun::update(force)?,
     }
     Ok(())
 }
@@ -403,37 +431,122 @@ fn print_scan_summary(m: &manifest::Manifest) {
 
 /// Resolve `--target`. "auto" walks catalog candidates for this desktop and
 /// keeps the first whose *inspected* desktop matches.
+/// Resolve `--target`. "auto" walks the registry's candidates for this
+/// desktop and source (verified conversions first) and keeps the first whose
+/// *inspected* desktop matches.
 fn choose_target(m: &manifest::Manifest, t: &str) -> Result<(String, target::ImageFacts)> {
     util::ensure_tools(&[("podman", "podman")])?;
+    let reg = registry::Registry::load()?;
     if t != "auto" {
-        let (img, _) = target::resolve(t);
+        let (img, _) = reg.resolve(t);
         return Ok((t.to_string(), target::inspect(&img)?));
     }
     let want = m.desktop.primary.unwrap_or(desktop::Desktop::Headless);
-    let preference: &[&str] = match want {
-        desktop::Desktop::Gnome => &["bluefin", "silverblue"],
-        desktop::Desktop::Kde => &["aurora", "kinoite"],
-        desktop::Desktop::Cosmic => &["cosmic-atomic"],
-        desktop::Desktop::Headless => &["fedora-bootc"],
-        _ => &[],
-    };
-    for id in preference {
-        let (img, _) = target::resolve(id);
-        let f = target::inspect(&img)?;
+    for cand in reg.candidates(&m.os, want) {
+        let f = target::inspect(&cand.image)?;
         if matches!(
             desktop::compare(&m.desktop, &f.desktop),
             desktop::Compat::Same | desktop::Compat::SourceHeadless
         ) {
             info(format!(
-                "auto-selected target {id} ({img}): desktop matches"
+                "auto-selected target {} ({}): desktop matches",
+                cand.id, cand.image
             ));
-            return Ok((id.to_string(), f));
+            return Ok((cand.id.clone(), f));
         }
     }
     bail!(
-        "no catalog target ships {}. Pass --target <image> with an image that does (see `plexy targets`)",
-        want.label()
+        "no registry target ships {} for {}. Pass --target <image> with an image that does (see `plexy targets --from auto`)",
+        want.label(),
+        m.os.pretty_name
     )
+}
+
+/// `plexy targets`: the registry, or the conversions available from a source.
+fn print_targets(from: Option<&str>, image_based: bool, files: bool) -> Result<()> {
+    let reg = registry::Registry::load()?;
+    if files {
+        for f in &reg.files {
+            println!("  {f}");
+        }
+        println!(
+            "  (add *.toml files to {})\n",
+            registry::override_dirs()
+                .iter()
+                .map(|d| d.display().to_string())
+                .collect::<Vec<_>>()
+                .join(" or ")
+        );
+    }
+    let Some(src_name) = from else {
+        println!(
+            "{:<15} {:<9} {:<7} {:<8} {:<47} UPDATES",
+            "NAME", "DESKTOP", "BACKEND", "LAYERS", "IMAGE"
+        );
+        for t in &reg.targets {
+            println!(
+                "{:<15} {:<9} {:<7} {:<8} {:<47} {}{}",
+                t.id,
+                format!("{:?}", t.desktop).to_lowercase(),
+                format!("{:?}", t.backend).to_lowercase(),
+                format!("{:?}", t.update.layering).to_lowercase(),
+                t.image,
+                t.remote(),
+                if t.update.signed { " (signed)" } else { "" }
+            );
+        }
+        println!(
+            "\nConversions: `plexy targets --from auto` (this system) or `--from ubuntu` / `--from fedora` / ..."
+        );
+        println!("Any bootc image reference works too: --target ghcr.io/you/custom:latest");
+        return Ok(());
+    };
+    let src = if src_name == "auto" {
+        os::detect_os(Path::new("/"))
+    } else {
+        registry::source_from_name(src_name, image_based)
+    };
+    println!(
+        "Conversions from {} ({}{}):\n",
+        src.pretty_name,
+        format!("{:?}", src.family).to_lowercase(),
+        if src.image_based {
+            ", image-based: plexy switch"
+        } else {
+            ", plexy migrate"
+        }
+    );
+    println!(
+        "{:<12} {:<15} {:<9} {:<27} NOTES",
+        "STATUS", "TARGET", "DESKTOP", "MODES"
+    );
+    for (t, c) in reg.conversions_from(&src) {
+        let modes = if c.modes.is_empty() {
+            "-".to_string()
+        } else {
+            c.modes
+                .iter()
+                .map(|m| format!("{m:?}").to_lowercase())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let mut notes = c.notes.clone().unwrap_or_default();
+        if let Some(e) = &c.evidence {
+            if !notes.is_empty() {
+                notes.push_str("; ");
+            }
+            notes.push_str(e);
+        }
+        println!(
+            "{:<12} {:<15} {:<9} {:<27} {}",
+            registry::status_label(c.status),
+            t.id,
+            format!("{:?}", t.desktop).to_lowercase(),
+            modes,
+            notes
+        );
+    }
+    Ok(())
 }
 
 fn make_plan(
@@ -445,6 +558,7 @@ fn make_plan(
     step("classifying packages");
     let mode = t.mode;
     let mut p = make_plan_inner(m, facts, name, t, mode)?;
+    apply_registry(&mut p, m, facts, t)?;
     if let Some(tb) = p.toolbox.as_mut() {
         // Toolbox images exist for the main distributions only; derivatives
         // fall back to the plain distribution image (distrobox initialises any image).
@@ -482,6 +596,72 @@ fn make_plan(
         }
     }
     Ok(p)
+}
+
+/// Fill in how the migrated system is updated, and check the conversion
+/// against the registry (refuse unsupported, warn on untested).
+fn apply_registry(
+    p: &mut plan::Plan,
+    m: &manifest::Manifest,
+    facts: &target::ImageFacts,
+    t: &TargetArgs,
+) -> Result<()> {
+    let reg = registry::Registry::load()?;
+    let (_, entry) = reg.resolve(&p.target_name);
+    let entry = entry.or_else(|| reg.targets.iter().find(|e| e.image == p.target_image));
+    match entry {
+        Some(e) => {
+            p.update_remote = e.remote().to_string();
+            p.update_signed = e.update.signed;
+            p.layering = e.update.layering;
+            match e.conversion_for(&m.os) {
+                Some(c) if c.status == registry::Status::Unsupported => bail!(
+                    "{} -> {} is not supported: {}",
+                    m.os.pretty_name,
+                    e.name,
+                    c.notes
+                        .as_deref()
+                        .unwrap_or("see `plexy targets --from auto`")
+                ),
+                Some(c) => {
+                    p.conversion_status = Some(registry::status_label(c.status).into());
+                    if c.status == registry::Status::Untested {
+                        p.warnings.push(format!(
+                            "{} -> {} has not been verified end to end yet (registry status: untested)",
+                            m.os.pretty_name, e.name
+                        ));
+                    } else if !c.modes.is_empty() && !c.modes.contains(&p.mode) {
+                        p.warnings.push(format!(
+                            "{} -> {} is verified in mode(s) {:?}, not {:?}",
+                            m.os.pretty_name, e.name, c.modes, p.mode
+                        ));
+                    }
+                }
+                None => p.warnings.push(format!(
+                    "the registry lists no conversion from {} to {}; proceeding untested",
+                    m.os.pretty_name, e.name
+                )),
+            }
+        }
+        None => {
+            // An image outside the registry: follow it directly, layer
+            // client-side when it ships rpm-ostree.
+            p.update_remote = p.target_image.clone();
+            p.update_signed = false;
+            p.layering = match p.backend {
+                target::Backend::Abroot => registry::Layering::Abroot,
+                _ if facts.has_rpm_ostree => registry::Layering::Client,
+                _ => registry::Layering::Image,
+            };
+        }
+    }
+    if t.customize.is_some() && p.layering == registry::Layering::Client {
+        info(
+            "--customize needs a derived image: layering into a local image instead of client-side",
+        );
+        p.layering = registry::Layering::Image;
+    }
+    Ok(())
 }
 
 fn make_plan_inner(
@@ -733,6 +913,23 @@ fn write_plan_dir(
     Ok(())
 }
 
+/// ostree container reference for an image, signature-verified when asked
+/// (the policy for it ships in the image, e.g. Universal Blue's cosign key).
+pub fn ostree_ref(image: &str, signed: bool) -> String {
+    if signed {
+        format!("ostree-image-signed:docker://{image}")
+    } else {
+        format!("ostree-unverified-registry:{image}")
+    }
+}
+
+/// Whether the system boots a locally built derived image. With client-side
+/// layering the upstream image is installed as-is and packages are layered
+/// by rpm-ostree on first boot, so the system follows the upstream remote.
+fn uses_derived(p: &plan::Plan, dir: &Path) -> bool {
+    p.layering != registry::Layering::Client && derived_needed(dir)
+}
+
 /// A derived image is only needed when the generated Containerfile does more
 /// than FROM the target.
 fn derived_needed(dir: &Path) -> bool {
@@ -745,11 +942,19 @@ fn derived_needed(dir: &Path) -> bool {
 fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
     util::ensure_tools(&[("podman", "podman")])?;
     {
-        if derived_needed(dir) {
+        if uses_derived(p, dir) {
             step(format!("building derived system image {}", p.derived_image));
             build::podman_build(&dir.join("system"), &p.derived_image)?;
         } else {
-            info("no packages to layer: the target image is used as-is");
+            if p.layering == registry::Layering::Client && !p.names_for(Dest::Image).is_empty() {
+                info(format!(
+                    "the system will follow {} directly; {} package(s) are layered with rpm-ostree on first boot",
+                    p.remote(),
+                    p.names_for(Dest::Image).len()
+                ));
+            } else {
+                info("no packages to layer: the target image is used as-is");
+            }
             target::pull(&p.target_image)?;
         }
     }
@@ -842,7 +1047,7 @@ fn do_apply(
     let _ = fs::create_dir_all(&staging);
     match p.backend {
         target::Backend::Bootc => {
-            let derived = derived_needed(dir);
+            let derived = uses_derived(p, dir);
             if derived {
                 let _ = util::run(
                     "cp",
@@ -861,8 +1066,15 @@ fn do_apply(
             } else {
                 (p.target_image.clone(), None)
             };
+            // Follow the real upstream remote unless the system boots a local
+            // derived image (which `plexy update` rebuilds from that remote).
+            let imgref = if derived {
+                image.clone()
+            } else {
+                p.remote().to_string()
+            };
             let opts = apply::ApplyOpts {
-                target_imgref: image.clone(),
+                target_imgref: imgref,
                 image,
                 target_transport: transport,
                 reboot,
@@ -888,7 +1100,18 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
     build_all(&p, &dir)?;
     confirm_destructive(&p, yes)?;
     // On an image-based host /etc and /var already survive a switch (3-way merge).
-    if derived_needed(&dir) {
+    if p.layering == registry::Layering::Client && util::have("rpm-ostree") {
+        // Follow the upstream remote directly; layered packages ride along.
+        let mut args = vec![
+            "rebase".to_string(),
+            ostree_ref(p.remote(), p.update_signed),
+        ];
+        for n in p.names_for(Dest::Image) {
+            args.push("--install".into());
+            args.push(n);
+        }
+        util::run_visible("rpm-ostree", &args)?;
+    } else if uses_derived(&p, &dir) {
         util::run_visible(
             "bootc",
             &[
@@ -899,7 +1122,7 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
             ],
         )?;
     } else {
-        util::run_visible("bootc", &["switch", &p.target_image])?;
+        util::run_visible("bootc", &["switch", p.remote()])?;
     }
     // Record what this image layers, so a later switch keeps it too.
     let state = Path::new(firstrun::STATE);

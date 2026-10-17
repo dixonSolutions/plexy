@@ -1,0 +1,310 @@
+# Plexy target registry.
+#
+# Every image-based OS Plexy knows how to migrate to, how the migrated system
+# stays updated, and which conversions are available from which sources.
+#
+# This file is built into plexy. Add or override entries without rebuilding by
+# dropping *.toml files with the same schema into
+#     /etc/plexy/targets.d/            (system-wide)
+#     ~/.config/plexy/targets.d/       (per user, $XDG_CONFIG_HOME respected)
+# An entry with an existing `id` replaces the built-in one; a new `id` adds a
+# target. `plexy targets --files` shows which files were loaded.
+#
+# Nothing here describes an image's *contents*: packages, desktop sessions,
+# accounts and tooling are always read from the image itself. `desktop` is the
+# expected desktop, used to pick candidates for `--target auto`; the image is
+# still inspected and a mismatch is still refused.
+#
+# [target.update] — how the installed system receives updates:
+#   remote    image reference the installed system follows (default: image)
+#   signed    verify signatures with the image's own sigstore policy
+#             (ostree-image-signed); requires the image to ship that policy
+#   layering  how packages Plexy layers survive updates:
+#     "client"  rpm-ostree layers them on top of the upstream image, so the
+#               system follows `remote` directly (needs rpm-ostree in the image)
+#     "image"   a derived image built locally FROM `remote`; `plexy update`
+#               (and plexy-update.timer) rebuild it when `remote` changes
+#     "abroot"  ABRoot replays /etc/abroot/packages.add at every upgrade
+#
+# [[target.conversion]] — which sources can be migrated to this target:
+#   from      os-release IDs (fedora, ubuntu, ultramarine, ...) or
+#             "family:fedora" / "family:debian"
+#   source    "mutable" (plexy migrate), "image-based" (plexy switch), "any"
+#   modes     package routing modes supported: image, hybrid, brew, toolbox
+#   status    "verified"   ran end to end in the lab (see evidence)
+#             "untested"   expected to work, not yet run
+#             "unsupported" refused, with `notes` explaining why
+#   evidence  verification log in the repository
+
+[[target]]
+id = "bluefin"
+name = "Bluefin"
+image = "ghcr.io/ublue-os/bluefin:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "gnome"
+priority = 10
+summary = "Universal Blue Bluefin (GNOME), Homebrew + distrobox preinstalled"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["ultramarine"]
+source = "mutable"
+modes = ["hybrid", "toolbox"]
+status = "verified"
+evidence = "demos/ultramarine-bluefin.verify.txt"
+notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+[[target.conversion]]
+from = ["ubuntu"]
+source = "mutable"
+modes = ["hybrid"]
+status = "verified"
+evidence = "demos/ubuntu-bluefin.verify.txt"
+notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+[[target.conversion]]
+from = ["debian"]
+source = "mutable"
+modes = ["hybrid"]
+status = "verified"
+evidence = "demos/debian-bluefin.verify.txt"
+notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+[[target.conversion]]
+from = ["fedora", "silverblue", "kinoite", "bluefin", "aurora", "bazzite"]
+source = "image-based"
+modes = ["image"]
+status = "verified"
+evidence = "demos/silverblue-bluefin.verify.txt"
+notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "bluefin-dx"
+name = "Bluefin DX"
+image = "ghcr.io/ublue-os/bluefin-dx:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "gnome"
+priority = 20
+summary = "Bluefin developer edition (GNOME, containers/VMs tooling)"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "bluefin-nvidia"
+name = "Bluefin (NVIDIA)"
+image = "ghcr.io/ublue-os/bluefin-nvidia-open:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "gnome"
+priority = 30
+summary = "Bluefin with NVIDIA open kernel modules"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "aurora"
+name = "Aurora"
+image = "ghcr.io/ublue-os/aurora:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "kde"
+priority = 10
+summary = "Universal Blue Aurora (KDE Plasma)"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "aurora-nvidia"
+name = "Aurora (NVIDIA)"
+image = "ghcr.io/ublue-os/aurora-nvidia-open:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "kde"
+priority = 30
+summary = "Aurora with NVIDIA open kernel modules"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "bazzite"
+name = "Bazzite"
+image = "ghcr.io/ublue-os/bazzite:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "kde"
+priority = 40
+summary = "Bazzite gaming (KDE Plasma)"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "bazzite-gnome"
+name = "Bazzite (GNOME)"
+image = "ghcr.io/ublue-os/bazzite-gnome:stable"
+backend = "bootc"
+family = "fedora"
+desktop = "gnome"
+priority = 40
+summary = "Bazzite gaming (GNOME)"
+[target.update]
+signed = true
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "silverblue"
+name = "Fedora Silverblue"
+image = "quay.io/fedora/fedora-silverblue:44"
+backend = "bootc"
+family = "fedora"
+desktop = "gnome"
+priority = 20
+summary = "Fedora Silverblue (GNOME)"
+[target.update]
+signed = false
+layering = "client"
+[[target.conversion]]
+from = ["fedora"]
+source = "mutable"
+modes = ["image"]
+status = "verified"
+evidence = "demos/fedora-silverblue.verify.txt"
+notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "kinoite"
+name = "Fedora Kinoite"
+image = "quay.io/fedora/fedora-kinoite:44"
+backend = "bootc"
+family = "fedora"
+desktop = "kde"
+priority = 20
+summary = "Fedora Kinoite (KDE Plasma)"
+[target.update]
+signed = false
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "cosmic-atomic"
+name = "Fedora COSMIC Atomic"
+image = "quay.io/fedora-ostree-desktops/cosmic-atomic:44"
+backend = "bootc"
+family = "fedora"
+desktop = "cosmic"
+priority = 10
+summary = "Fedora COSMIC Atomic"
+[target.update]
+signed = false
+layering = "client"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "fedora-bootc"
+name = "Fedora bootc"
+image = "quay.io/fedora/fedora-bootc:44"
+backend = "bootc"
+family = "fedora"
+desktop = "headless"
+priority = 10
+summary = "Fedora bootc base (headless servers)"
+[target.update]
+signed = false
+# Server images are usually built, not layered: keep a derived image and let
+# `plexy update` rebuild it from the remote.
+layering = "image"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "any"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+
+[[target]]
+id = "vanilla"
+name = "Vanilla OS"
+image = "ghcr.io/vanilla-os/gnome:latest"
+backend = "abroot"
+family = "debian"
+desktop = "gnome"
+priority = 30
+summary = "Vanilla OS (GNOME, Debian-based) on ABRoot A/B partitions"
+[target.update]
+signed = false
+layering = "abroot"
+[[target.conversion]]
+from = ["ubuntu"]
+source = "mutable"
+modes = ["image"]
+status = "verified"
+evidence = "demos/ubuntu-vanilla.verify.txt"
+notes = "needs --abroot-disk (a second disk or free space); the old system stays bootable"
+[[target.conversion]]
+from = ["family:debian"]
+source = "mutable"
+modes = ["image", "hybrid", "brew", "toolbox"]
+status = "untested"
+notes = "needs --abroot-disk (a second disk or free space)"
+[[target.conversion]]
+from = ["family:fedora"]
+source = "mutable"
+modes = ["hybrid", "toolbox"]
+status = "untested"
+notes = "Fedora packages have no Debian equivalents in general: route software to a toolbox of the old system"
+[[target.conversion]]
+from = ["family:fedora", "family:debian"]
+source = "image-based"
+modes = []
+status = "unsupported"
+notes = "ABRoot cannot take over an ostree system in place; install Vanilla OS with its installer"

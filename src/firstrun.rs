@@ -100,6 +100,172 @@ pub fn firstboot() -> Result<()> {
     Ok(())
 }
 
+/// rpm-ostree with retries: Bluefin's own update service may hold the lock
+/// on first boot.
+fn rpm_ostree(args: &[&str]) -> Result<String> {
+    let mut last = None;
+    for attempt in 0..5 {
+        match run("rpm-ostree", args) {
+            Ok(o) => return Ok(o),
+            Err(e) => {
+                last = Some(e);
+                std::thread::sleep(std::time::Duration::from_secs(15 * (attempt + 1)));
+            }
+        }
+    }
+    Err(last.unwrap())
+}
+
+/// `plexy update`: keep a derived system image (registry `layering =
+/// "image"`) following its upstream remote. Pull the remote; when its digest
+/// differs from the one the current image was built from, rebuild the derived
+/// image from the saved Containerfile and stage it with `bootc upgrade`.
+/// Other layering kinds are updated by the OS itself; say how.
+pub fn update(force: bool) -> Result<()> {
+    let plan = load_plan()?;
+    match plan.layering {
+        crate::registry::Layering::Client => {
+            println!(
+                "This system follows {} directly; layered packages are kept by rpm-ostree.",
+                plan.remote()
+            );
+            println!(
+                "Update with `rpm-ostree upgrade` (or `bootc upgrade` when nothing is layered); the OS's own update timer does this too."
+            );
+            return Ok(());
+        }
+        crate::registry::Layering::Abroot => {
+            println!(
+                "ABRoot updates from {}; run `abroot upgrade` (packages in /etc/abroot/packages.add are reinstalled).",
+                plan.remote()
+            );
+            return Ok(());
+        }
+        crate::registry::Layering::Image => {}
+    }
+    let ctx = Path::new(STATE).join("staging/system");
+    if !ctx.join("Containerfile").exists() {
+        anyhow::bail!(
+            "no build context at {} to rebuild the system image from",
+            ctx.display()
+        );
+    }
+    let remote = plan.remote().to_string();
+    util::run_visible("podman", &["pull", &remote])?;
+    let digest = crate::apply::image_digest(&remote).unwrap_or_default();
+    let known = fs::read_to_string(Path::new(STATE).join("base.digest")).unwrap_or_default();
+    if !force && !digest.is_empty() && digest == known.trim() {
+        info(format!(
+            "{remote} is unchanged ({digest}); nothing to rebuild"
+        ));
+        return Ok(());
+    }
+    info(format!(
+        "{remote} changed: rebuilding {}",
+        plan.derived_image
+    ));
+    crate::build::podman_build(&ctx, &plan.derived_image)?;
+    util::run_visible("bootc", &["upgrade"])?;
+    write_file(&Path::new(STATE).join("base.digest"), &digest)?;
+    let _ = run("podman", &["image", "prune", "-f"]);
+    info("staged; the new image is used after the next reboot");
+    Ok(())
+}
+
+/// `plexy layer` (plexy-layer.service): client-side layering after first boot.
+pub fn layer() -> Result<()> {
+    let plan = load_plan()?;
+    if plan.layering != crate::registry::Layering::Client || !have("rpm-ostree") {
+        info("nothing to layer client-side");
+        return Ok(());
+    }
+    let report = layer_client_side(&plan);
+    let failed = report.iter().any(|l| l.contains("could not"));
+    let log = Path::new(STATE).join("layer.log");
+    write_file(&log, report.join("\n") + "\n")?;
+    let rep = Path::new(STATE).join("report.txt");
+    let mut all = fs::read_to_string(&rep).unwrap_or_default();
+    all.push_str(&(report.join("\n") + "\n"));
+    write_file(&rep, all)?;
+    info(report.join("; "));
+    if failed {
+        // leave layer.done absent so the service retries next boot
+        anyhow::bail!("client-side layering incomplete; see {}", log.display());
+    }
+    write_file(
+        &Path::new(STATE).join("layer.done"),
+        util::now_unix().to_string(),
+    )?;
+    Ok(())
+}
+
+/// Client-side layering (registry `layering = "client"`): the system runs the
+/// upstream image and follows its remote; the packages the plan layers are
+/// added with rpm-ostree, which keeps them across every upgrade.
+fn layer_client_side(plan: &Plan) -> Vec<String> {
+    let mut report = vec![];
+    let pkgs = plan.names_for(Dest::Image);
+    if !pkgs.is_empty() {
+        let mut args = vec![
+            "install",
+            "--idempotent",
+            "--allow-inactive",
+            "-y",
+            "--apply-live",
+        ];
+        args.extend(pkgs.iter().map(String::as_str));
+        match rpm_ostree(&args) {
+            Ok(_) => report.push(format!(
+                "layered with rpm-ostree (live): {}",
+                pkgs.join(" ")
+            )),
+            Err(live) => {
+                // Some packages cannot be applied live; stage them instead.
+                let mut staged = vec!["install", "--idempotent", "--allow-inactive", "-y"];
+                staged.extend(pkgs.iter().map(String::as_str));
+                match rpm_ostree(&staged) {
+                    Ok(_) => report.push(format!(
+                        "layered with rpm-ostree, active after the next reboot: {} ({live})",
+                        pkgs.join(" ")
+                    )),
+                    Err(e) => report.push(format!(
+                        "rpm-ostree could not layer {} (will retry next boot): {e}",
+                        pkgs.join(" ")
+                    )),
+                }
+            }
+        }
+        // Services the old system had enabled that these packages provide.
+        let _ = run("systemctl", &["daemon-reload"]);
+        let mut enabled = vec![];
+        for u in &plan.units_to_enable {
+            let exists = try_run("systemctl", &["cat", u]).is_some();
+            let on = try_run("systemctl", &["is-enabled", "--quiet", u]).is_some();
+            if exists && !on && run("systemctl", &["enable", "--now", u]).is_ok() {
+                enabled.push(u.clone());
+            }
+        }
+        if !enabled.is_empty() {
+            report.push(format!(
+                "services enabled as on the old system: {}",
+                enabled.join(" ")
+            ));
+        }
+    }
+    if plan.update_signed {
+        let r = crate::ostree_ref(plan.remote(), true);
+        match rpm_ostree(&["rebase", &r]) {
+            Ok(_) => report.push(format!(
+                "updates now follow {r} (signature verified; active after the next reboot)"
+            )),
+            Err(e) => report.push(format!("could not switch to the signed reference {r}: {e}")),
+        }
+    } else {
+        report.push(format!("updates follow {}", plan.remote()));
+    }
+    report
+}
+
 fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/root".into()))
 }

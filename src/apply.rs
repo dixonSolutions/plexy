@@ -176,6 +176,16 @@ pub fn required_free_before_build(
     deploy_room(target_bytes) + toolbox + flatpak_apps as u64 * FLATPAK_PER_APP + FIRST_BOOT_MARGIN
 }
 
+/// Content digest of an image in local container storage.
+pub fn image_digest(image: &str) -> Option<String> {
+    try_run(
+        "podman",
+        &["image", "inspect", "--format", "{{.Digest}}", image],
+    )
+    .map(|d| d.trim().to_string())
+    .filter(|d| !d.is_empty())
+}
+
 /// Unpacked size of an image in local container storage, if it is there.
 pub fn image_size(image: &str) -> Option<u64> {
     try_run(
@@ -1166,6 +1176,48 @@ TimeoutStartSec=0
 WantedBy=multi-user.target
 ";
 
+/// Client-side layering needs the network and can take minutes, so it runs
+/// after the login-gating first-boot stage instead of inside it.
+pub const LAYER_UNIT: &str = "[Unit]
+Description=Plexy: layer your packages on top of the upstream image
+ConditionPathExists=!/var/lib/plexy/layer.done
+After=network-online.target plexy-firstboot.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/plexy layer
+RemainAfterExit=yes
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+";
+
+/// Keeps a derived image (registry `layering = "image"`) following its
+/// upstream remote: rebuild when the remote changes, stage with bootc.
+pub const UPDATE_SERVICE: &str = "[Unit]
+Description=Plexy: rebuild the system image when its upstream remote changes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/plexy update
+";
+
+pub const UPDATE_TIMER: &str = "[Unit]
+Description=Plexy: weekly rebuild of the derived system image from its remote
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+";
+
 pub const FIRSTLOGIN_UNIT: &str = "[Unit]
 Description=Plexy: restore your toolbox, Homebrew tools and apps
 ConditionPathExists=!%h/.local/state/plexy/firstlogin.done
@@ -1182,7 +1234,15 @@ TimeoutStartSec=0
 WantedBy=default.target
 ";
 
-fn install_hooks(plan: &Plan, deploy: &Path, new_var: &Path, staging: &Path) -> Result<()> {
+/// `derived`: the system boots a locally built image (plexy-update keeps it
+/// following its remote).
+fn install_hooks(
+    plan: &Plan,
+    deploy: &Path,
+    new_var: &Path,
+    staging: &Path,
+    derived: bool,
+) -> Result<()> {
     step("installing first-boot and first-login hooks");
     if util::dry_run() {
         return Ok(());
@@ -1204,6 +1264,35 @@ fn install_hooks(plan: &Plan, deploy: &Path, new_var: &Path, staging: &Path) -> 
     fs::create_dir_all(wants.parent().unwrap())?;
     let _ = fs::remove_file(&wants);
     std::os::unix::fs::symlink("/etc/systemd/system/plexy-firstboot.service", &wants)?;
+    if derived {
+        write_file(
+            &root_join(deploy, "/etc/systemd/system/plexy-update.service"),
+            UPDATE_SERVICE,
+        )?;
+        write_file(
+            &root_join(deploy, "/etc/systemd/system/plexy-update.timer"),
+            UPDATE_TIMER,
+        )?;
+        let tw = root_join(
+            deploy,
+            "/etc/systemd/system/timers.target.wants/plexy-update.timer",
+        );
+        fs::create_dir_all(tw.parent().unwrap())?;
+        let _ = fs::remove_file(&tw);
+        std::os::unix::fs::symlink("/etc/systemd/system/plexy-update.timer", &tw)?;
+    }
+    if plan.layering == crate::registry::Layering::Client {
+        write_file(
+            &root_join(deploy, "/etc/systemd/system/plexy-layer.service"),
+            LAYER_UNIT,
+        )?;
+        let lw = root_join(
+            deploy,
+            "/etc/systemd/system/multi-user.target.wants/plexy-layer.service",
+        );
+        let _ = fs::remove_file(&lw);
+        std::os::unix::fs::symlink("/etc/systemd/system/plexy-layer.service", &lw)?;
+    }
     let uwants = root_join(
         deploy,
         "/etc/systemd/user/default.target.wants/plexy-firstlogin.service",
@@ -1275,6 +1364,9 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
 
     write_accounts(m, plan, &deploy)?;
     write_configs(plan, &deploy, staging)?;
+    if plan.layering == crate::registry::Layering::Client {
+        install_repos(m, plan, &deploy)?;
+    }
     enable_units(plan, &deploy)?;
 
     // --- point of no return for the old system: move data ------------------
@@ -1290,7 +1382,16 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
         plan.source_family,
         plan.target_family,
     )?;
-    install_hooks(plan, &deploy, &layout.new_var, staging)?;
+    let derived = opts.target_transport.as_deref() == Some("containers-storage");
+    install_hooks(plan, &deploy, &layout.new_var, staging, derived)?;
+    // The digest the derived image was built from, so `plexy update` knows
+    // when the remote has moved on.
+    if derived
+        && !util::dry_run()
+        && let Some(d) = image_digest(&plan.target_image)
+    {
+        write_file(&layout.new_var.join("lib/plexy/base.digest"), d)?;
+    }
 
     let mut extra = vec![];
     if layout.var_mounted {
@@ -1356,6 +1457,49 @@ pub fn install_self(dst: &Path) -> Result<()> {
     fs::copy("/proc/self/exe", &tmp)?;
     fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
     fs::rename(&tmp, dst)?;
+    Ok(())
+}
+
+/// Client-side layering pulls packages on the new system, so the third-party
+/// repositories they come from (Terra, RPM Fusion, COPR, ...) and their keys
+/// go into the new deployment's /etc, where they persist across upgrades.
+fn install_repos(m: &Manifest, plan: &Plan, deploy: &Path) -> Result<()> {
+    let repos: Vec<&crate::manifest::RepoFile> = m
+        .repos
+        .iter()
+        .filter(|r| plan.repo_files.contains(&r.path))
+        .collect();
+    if repos.is_empty() {
+        return Ok(());
+    }
+    step(format!(
+        "adding {} repositories for packages layered on first boot",
+        repos.len()
+    ));
+    let mut files: Vec<String> = vec![];
+    for r in &repos {
+        files.push(r.path.clone());
+        files.extend(
+            r.keys
+                .iter()
+                .map(|k| crate::build::expand_dnf_vars(k, &m.os.version_id, &m.os.arch)),
+        );
+    }
+    if m.os.family == Family::Fedora
+        && let Ok(rd) = fs::read_dir("/etc/pki/rpm-gpg")
+    {
+        files.extend(rd.flatten().map(|e| e.path().display().to_string()));
+    }
+    files.sort();
+    files.dedup();
+    for f in files {
+        let src = Path::new(&f);
+        let dst = root_join(deploy, &f);
+        // never overwrite what the image ships (its own repos and keys)
+        if src.is_file() && !dst.exists() && !util::dry_run() {
+            copy_preserving(src, &dst)?;
+        }
+    }
     Ok(())
 }
 

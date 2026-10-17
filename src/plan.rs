@@ -210,9 +210,31 @@ pub struct Plan {
     pub units_to_disable: Vec<String>,
     pub kargs: Vec<String>,
     pub warnings: Vec<String>,
+    /// Image reference the migrated system follows for updates (the
+    /// registry's `update.remote`; plans from older versions: empty).
+    #[serde(default)]
+    pub update_remote: String,
+    /// Switch to the signature-verified reference (ostree-image-signed).
+    #[serde(default)]
+    pub update_signed: bool,
+    /// How layered packages survive updates. Older plans: derived image.
+    #[serde(default)]
+    pub layering: crate::registry::Layering,
+    /// Registry status of this conversion (verified / untested / ...).
+    #[serde(default)]
+    pub conversion_status: Option<String>,
 }
 
 impl Plan {
+    /// Image reference for updates, falling back to the target image.
+    pub fn remote(&self) -> &str {
+        if self.update_remote.is_empty() {
+            &self.target_image
+        } else {
+            &self.update_remote
+        }
+    }
+
     pub fn by_dest(&self, d: Dest) -> Vec<&PlannedPkg> {
         self.packages.iter().filter(|p| p.dest == d).collect()
     }
@@ -306,6 +328,11 @@ pub fn etc_denied(path: &str) -> bool {
         "/etc/systemd/system/cloud-",
         "/etc/ostree/",
         "/etc/containers/storage.conf",
+        // The target's signature policy decides how its own updates are
+        // verified; the old system's must never replace it.
+        "/etc/containers/policy.json",
+        "/etc/containers/registries.d/",
+        "/etc/pki/containers/",
         "/etc/X11/xorg.conf.d/00-keyboard.conf",
         "/etc/apparmor",
         "/etc/update-motd.d/",
@@ -922,6 +949,10 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         units_to_disable,
         kargs: m.boot.kargs.clone(),
         warnings,
+        update_remote: t.image.clone(),
+        update_signed: false,
+        layering: crate::registry::Layering::Image,
+        conversion_status: None,
     })
 }
 
@@ -1310,6 +1341,8 @@ mod tests {
         assert!(etc_denied("/etc/dconf/db/local"));
         assert!(!etc_denied("/etc/dconf/db/local.d/00-custom"));
         assert!(etc_denied("/etc/authselect/system-auth"));
+        assert!(etc_denied("/etc/containers/policy.json"));
+        assert!(etc_denied("/etc/containers/registries.d/default.yaml"));
         assert!(etc_denied("/etc/systemd/system/snap-firefox-9057.mount"));
         assert!(etc_denied("/etc/systemd/system/snapd.service.d/x.conf"));
         assert!(!etc_denied("/etc/snapper/configs/root"));

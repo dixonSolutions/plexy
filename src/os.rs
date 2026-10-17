@@ -50,6 +50,9 @@ pub enum PkgManager {
 pub struct OsInfo {
     pub id: String,
     pub id_like: String,
+    /// VARIANT_ID (silverblue, kinoite, workstation, ...), empty when absent.
+    #[serde(default)]
+    pub variant_id: String,
     pub name: String,
     pub version_id: String,
     pub pretty_name: String,
@@ -121,6 +124,7 @@ pub fn detect_os(root: &Path) -> OsInfo {
     OsInfo {
         id: g("ID"),
         id_like: g("ID_LIKE"),
+        variant_id: g("VARIANT_ID"),
         name: g("NAME"),
         version_id: g("VERSION_ID"),
         pretty_name: g("PRETTY_NAME"),
