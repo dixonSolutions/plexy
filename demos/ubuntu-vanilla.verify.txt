@@ -1,0 +1,19 @@
+== Vanilla OS 3.0 (kernel 7.1.3+deb14-amd64)
+PASS  os is Vanilla
+PASS  booted from an ABRoot root
+PASS  user tester exists
+PASS  home of tester present (/home/tester)
+PASS  password hash of tester carried
+PASS  tester in group sudo
+PASS  file /etc/tmux.conf
+PASS  file /home/tester/Documents/notes.txt
+PASS  command htop
+PASS  command nginx
+PASS  command tmux
+PASS  unit nginx.service active
+PASS  /etc/gdm3/custom.conf contains 'AutomaticLogin=tester'
+PASS  no failed units
+   firstboot: Plexy migration to ghcr.io/vanilla-os/gnome:latest completed first boot.
+   firstboot: system dconf databases rebuilt
+   firstboot: installed Flatpaks: org.mozilla.firefox
+== 14 passed, 0 failed
