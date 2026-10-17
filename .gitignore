@@ -1,0 +1,4 @@
+/target
+*.qcow2
+*.img
+*.tar

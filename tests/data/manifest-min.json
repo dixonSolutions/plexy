@@ -1,0 +1,9 @@
+{"plexy_version":"0","created":0,
+ "os":{"id":"ubuntu","id_like":"debian","name":"Ubuntu","version_id":"26.04","pretty_name":"Ubuntu 26.04","family":"debian","pkg_manager":"apt","image_based":false,"booted_image":null,"arch":"x86_64","selinux":false},
+ "boot":{"uefi":true,"root_fstype":"ext4","root_source":"/dev/vda1","root_uuid":null,"root_subvol":null,"data_mounts":[],"boot_separate":true,"esp":"/dev/vda15","kargs":[],"root_on_luks":false,"root_on_lvm":false,"kernel":"7.0"},
+ "desktop":{"installed":[],"primary":"headless","display_manager":null,"sessions":[],"gnome_system_extensions":[],"dconf_local":[]},
+ "packages":{"manager":"apt","installed":{},"user_installed":[],"origin":{},"config_changes":[],"removed_from_base":[]},
+ "repos":[],
+ "accounts":{"all_users":[],"all_groups":[],"humans":[],"memberships":{}},
+ "system":{"hostname":"box","timezone":null,"locale":{},"keymap":null,"enabled_units":[],"default_target":null},
+ "wrappers":{"flatpak":null,"homebrew":null,"snaps":[],"nix":false,"containers":{}}}
