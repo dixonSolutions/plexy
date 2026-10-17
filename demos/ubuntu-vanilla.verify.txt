@@ -1,4 +1,5 @@
 == Vanilla OS 3.0 (kernel 7.1.3+deb14-amd64)
+PASS  graphical session of tester on seat0
 PASS  os is Vanilla
 PASS  booted from an ABRoot root
 PASS  user tester exists
@@ -11,9 +12,9 @@ PASS  command htop
 PASS  command nginx
 PASS  command tmux
 PASS  unit nginx.service active
-PASS  /etc/gdm3/custom.conf contains 'AutomaticLogin=tester'
+PASS  /etc/gdm3/daemon.conf contains 'AutomaticLogin=tester'
 PASS  no failed units
    firstboot: Plexy migration to ghcr.io/vanilla-os/gnome:latest completed first boot.
    firstboot: system dconf databases rebuilt
    firstboot: installed Flatpaks: org.mozilla.firefox
-== 14 passed, 0 failed
+== 15 passed, 0 failed
