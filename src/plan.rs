@@ -1020,12 +1020,28 @@ pub fn is_distro_repo(content: &str) -> bool {
         "dl.fedoraproject.org",
         "cdn.fedoraproject.org",
     ];
-    let urls: Vec<&str> = content
+    let mut urls: Vec<String> = Vec::new();
+    for w in content
         .lines()
         .filter(|l| !l.trim_start().starts_with('#'))
         .flat_map(str::split_whitespace)
         .filter(|w| w.contains("://") || w.starts_with("metalink=") || w.starts_with("baseurl="))
-        .collect();
+    {
+        // Debian cloud images: `URIs: mirror+file:///etc/apt/mirrors/debian.list`,
+        // a file listing the actual mirrors. Judge those instead.
+        match w.strip_prefix("mirror+file://") {
+            Some(path) => match std::fs::read_to_string(path) {
+                Ok(list) => urls.extend(
+                    list.lines()
+                        .map(str::trim)
+                        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                        .map(|l| l.split_whitespace().next().unwrap_or(l).to_string()),
+                ),
+                Err(_) => urls.push(w.to_string()),
+            },
+            None => urls.push(w.to_string()),
+        }
+    }
     !urls.is_empty()
         && urls
             .iter()
@@ -1212,6 +1228,30 @@ pub fn load(path: &std::path::Path) -> Result<Plan> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn debian_mirror_file_sources_are_distro_repos() {
+        let dir = std::env::temp_dir().join(format!("plexy-mirrors-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ok = dir.join("debian.list");
+        std::fs::write(&ok, "https://deb.debian.org/debian\n").unwrap();
+        let bad = dir.join("other.list");
+        std::fs::write(
+            &bad,
+            "https://deb.debian.org/debian\nhttps://repo.example.com/apt\n",
+        )
+        .unwrap();
+        let src = |p: &std::path::Path| {
+            format!(
+                "Types: deb\nURIs: mirror+file://{}\nSuites: trixie\n",
+                p.display()
+            )
+        };
+        assert!(is_distro_repo(&src(&ok)));
+        assert!(!is_distro_repo(&src(&bad)));
+        assert!(!is_distro_repo(&src(&dir.join("missing.list"))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn gdm_autologin_is_portable_between_debian_platforms() {
         assert!(etc_portable_any(
