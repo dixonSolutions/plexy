@@ -2,18 +2,18 @@
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/bluefin:ultra-desk
-        Digest: sha256:fa0896fd964b6f80730e957b7c40b680d16e5ec880a4e19ccd6608ee53691836 (amd64)
+        Digest: sha256:9ca68f58a94ca792c6a6c68dba7a45232642d33b1bc3fdc44ed4c77f731c13dd (amd64)
        Version: 44.20261013 (2026-10-13T01:49:54Z)
 PASS  user alice exists
 PASS  home of alice present (/home/alice)
 PASS  password hash of alice carried
 PASS  alice in group wheel
 PASS  file /var/home/alice/Documents/thesis.txt
-FAIL  as alice: nvim --version
-FAIL  as alice: rg --version
+PASS  as alice: nvim --version
+PASS  as alice: rg --version
 PASS  unit cockpit.socket enabled
 PASS  no failed units
    SELinux: Enforcing, AVC denials this boot: 8
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
-== 9 passed, 2 failed
+== 11 passed, 0 failed
