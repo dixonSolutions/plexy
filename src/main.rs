@@ -348,7 +348,7 @@ fn print_scan_summary(m: &manifest::Manifest) {
             .join(", ")
     );
     println!(
-        "  services : {} enabled by the admin",
+        "  services : {} enabled",
         m.system.enabled_units.len()
     );
     if let Some(f) = &m.wrappers.flatpak {
