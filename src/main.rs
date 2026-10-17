@@ -16,7 +16,7 @@ mod state;
 mod target;
 mod util;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use plan::{Dest, Mode};
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,8 +26,12 @@ use std::path::{Path, PathBuf};
 use util::{info, step, warn};
 
 #[derive(Parser)]
-#[command(name = "plexy", version, about = "Migrate a traditional Linux install in place to an image-based OS \
-(Bluefin, Silverblue, Aurora, Vanilla OS, ...) keeping your packages, config, users and data.")]
+#[command(
+    name = "plexy",
+    version,
+    about = "Migrate a traditional Linux install in place to an image-based OS \
+(Bluefin, Silverblue, Aurora, Vanilla OS, ...) keeping your packages, config, users and data."
+)]
 struct Cli {
     #[arg(short, long, global = true)]
     verbose: bool,
@@ -164,11 +168,22 @@ fn real_main(cli: Cli) -> Result<()> {
             }
         }
         Cmd::Targets => {
-            println!("{:<16} {:<8} {:<48} DESCRIPTION", "NAME", "BACKEND", "IMAGE");
+            println!(
+                "{:<16} {:<8} {:<48} DESCRIPTION",
+                "NAME", "BACKEND", "IMAGE"
+            );
             for c in target::CATALOG {
-                println!("{:<16} {:<8} {:<48} {}", c.id, format!("{:?}", c.backend).to_lowercase(), c.image, c.summary);
+                println!(
+                    "{:<16} {:<8} {:<48} {}",
+                    c.id,
+                    format!("{:?}", c.backend).to_lowercase(),
+                    c.image,
+                    c.summary
+                );
             }
-            println!("\nAny bootc image reference works too, e.g. --target ghcr.io/you/custom:latest");
+            println!(
+                "\nAny bootc image reference works too, e.g. --target ghcr.io/you/custom:latest"
+            );
             println!("`--target auto` picks a catalog image whose desktop matches yours.");
         }
         Cmd::Inspect { image } => {
@@ -179,7 +194,10 @@ fn real_main(cli: Cli) -> Result<()> {
             println!("backend   : {:?}", f.backend);
             println!(
                 "desktop   : {} (sessions: {})",
-                f.desktop.primary.map(desktop::Desktop::label).unwrap_or("?"),
+                f.desktop
+                    .primary
+                    .map(desktop::Desktop::label)
+                    .unwrap_or("?"),
                 f.desktop.sessions.join(", ")
             );
             println!("packages  : {}", f.packages.len());
@@ -196,7 +214,12 @@ fn real_main(cli: Cli) -> Result<()> {
             println!("  per-package detail:");
             for x in &p.packages {
                 if x.dest != Dest::Base || cli.verbose {
-                    println!("    {:<36} {:<8} {}", x.name, format!("{:?}", x.dest).to_lowercase(), x.why);
+                    println!(
+                        "    {:<36} {:<8} {}",
+                        x.name,
+                        format!("{:?}", x.dest).to_lowercase(),
+                        x.why
+                    );
                 }
             }
         }
@@ -211,13 +234,26 @@ fn real_main(cli: Cli) -> Result<()> {
             let p = plan::load(&dir.join("plan.json"))?;
             build_all(&p, &dir)?;
         }
-        Cmd::Apply { plan: dir, reboot, yes, allow_esp_wipe, abroot_disk } => {
+        Cmd::Apply {
+            plan: dir,
+            reboot,
+            yes,
+            allow_esp_wipe,
+            abroot_disk,
+        } => {
             let p = plan::load(&dir.join("plan.json"))?;
-            let m: manifest::Manifest = serde_json::from_str(&fs::read_to_string(dir.join("manifest.json"))?)?;
+            let m: manifest::Manifest =
+                serde_json::from_str(&fs::read_to_string(dir.join("manifest.json"))?)?;
             confirm_destructive(&p, yes)?;
             do_apply(&m, &p, &dir, reboot, allow_esp_wipe, abroot_disk)?;
         }
-        Cmd::Migrate { t, reboot, yes, allow_esp_wipe, abroot_disk } => {
+        Cmd::Migrate {
+            t,
+            reboot,
+            yes,
+            allow_esp_wipe,
+            abroot_disk,
+        } => {
             let m = manifest::scan()?;
             print_scan_summary(&m);
             if m.os.image_based {
@@ -260,10 +296,16 @@ fn review_or_print(p: &mut plan::Plan, yes: bool) -> Result<()> {
 
 fn print_scan_summary(m: &manifest::Manifest) {
     println!();
-    println!("  system   : {} ({:?}, {:?})", m.os.pretty_name, m.os.family, m.os.pkg_manager);
+    println!(
+        "  system   : {} ({:?}, {:?})",
+        m.os.pretty_name, m.os.family, m.os.pkg_manager
+    );
     println!(
         "  desktop  : {} (display manager: {})",
-        m.desktop.primary.map(desktop::Desktop::label).unwrap_or("?"),
+        m.desktop
+            .primary
+            .map(desktop::Desktop::label)
+            .unwrap_or("?"),
         m.desktop.display_manager.as_deref().unwrap_or("-")
     );
     println!(
@@ -271,27 +313,64 @@ fn print_scan_summary(m: &manifest::Manifest) {
         if m.boot.uefi { "UEFI" } else { "BIOS" },
         m.boot.root_source,
         m.boot.root_fstype,
-        m.boot.root_subvol.as_ref().map(|s| format!(" subvol={s}")).unwrap_or_default()
+        m.boot
+            .root_subvol
+            .as_ref()
+            .map(|s| format!(" subvol={s}"))
+            .unwrap_or_default()
     );
     println!(
         "  packages : {} installed, {} user-installed",
         m.packages.installed.len(),
         m.packages.user_installed.len()
     );
-    let changed = m.packages.config_changes.iter().filter(|c| c.kind == pkg::ConfigKind::Modified).count();
-    let unowned = m.packages.config_changes.iter().filter(|c| c.kind == pkg::ConfigKind::Unowned).count();
+    let changed = m
+        .packages
+        .config_changes
+        .iter()
+        .filter(|c| c.kind == pkg::ConfigKind::Modified)
+        .count();
+    let unowned = m
+        .packages
+        .config_changes
+        .iter()
+        .filter(|c| c.kind == pkg::ConfigKind::Unowned)
+        .count();
     println!("  config   : {changed} modified package configs, {unowned} unowned files in /etc");
     println!("  repos    : {}", m.repos.len());
-    println!("  users    : {}", m.accounts.humans.iter().map(|h| h.name.as_str()).collect::<Vec<_>>().join(", "));
-    println!("  services : {} enabled by the admin", m.system.enabled_units.len());
+    println!(
+        "  users    : {}",
+        m.accounts
+            .humans
+            .iter()
+            .map(|h| h.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!(
+        "  services : {} enabled by the admin",
+        m.system.enabled_units.len()
+    );
     if let Some(f) = &m.wrappers.flatpak {
-        println!("  flatpak  : {} system apps, remotes: {}", f.system_apps.len(), f.system_remotes.join(","));
+        println!(
+            "  flatpak  : {} system apps, remotes: {}",
+            f.system_apps.len(),
+            f.system_remotes.join(",")
+        );
     }
     if let Some(b) = &m.wrappers.homebrew {
         println!("  homebrew : {} formulae at {}", b.formulae.len(), b.prefix);
     }
     if !m.wrappers.snaps.is_empty() {
-        println!("  snaps    : {}", m.wrappers.snaps.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", "));
+        println!(
+            "  snaps    : {}",
+            m.wrappers
+                .snaps
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
     }
     println!();
 }
@@ -318,7 +397,9 @@ fn choose_target(m: &manifest::Manifest, t: &str) -> Result<(String, target::Ima
             desktop::compare(&m.desktop, &f.desktop),
             desktop::Compat::Same | desktop::Compat::SourceHeadless
         ) {
-            info(format!("auto-selected target {id} ({img}): desktop matches"));
+            info(format!(
+                "auto-selected target {id} ({img}): desktop matches"
+            ));
             return Ok((id.to_string(), f));
         }
     }
@@ -328,11 +409,20 @@ fn choose_target(m: &manifest::Manifest, t: &str) -> Result<(String, target::Ima
     )
 }
 
-fn make_plan(m: &manifest::Manifest, facts: &target::ImageFacts, name: String, t: &TargetArgs) -> Result<plan::Plan> {
+fn make_plan(
+    m: &manifest::Manifest,
+    facts: &target::ImageFacts,
+    name: String,
+    t: &TargetArgs,
+) -> Result<plan::Plan> {
     step("classifying packages");
     let mode = t.mode;
     let files = package_files(m, mode == Mode::Toolbox || t.include_preinstalled)?;
-    let brew_index = if matches!(mode, Mode::Brew | Mode::Hybrid) { load_brew_index() } else { BTreeMap::new() };
+    let brew_index = if matches!(mode, Mode::Brew | Mode::Hybrid) {
+        load_brew_index()
+    } else {
+        BTreeMap::new()
+    };
     plan::build(plan::PlanInputs {
         manifest: m,
         target: facts,
@@ -350,13 +440,20 @@ fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, S
     let want: BTreeSet<&str> = if all {
         m.packages.installed.keys().map(String::as_str).collect()
     } else {
-        m.packages.user_installed.iter().map(|p| p.name.as_str()).collect()
+        m.packages
+            .user_installed
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect()
     };
     let mut out: BTreeMap<String, String> = BTreeMap::new();
     match m.packages.manager.as_str() {
         "apt" => {
             for n in &want {
-                for cand in [format!("/var/lib/dpkg/info/{n}.list"), format!("/var/lib/dpkg/info/{n}:amd64.list")] {
+                for cand in [
+                    format!("/var/lib/dpkg/info/{n}.list"),
+                    format!("/var/lib/dpkg/info/{n}:amd64.list"),
+                ] {
                     if let Ok(t) = fs::read_to_string(&cand) {
                         out.insert(n.to_string(), t);
                         break;
@@ -368,11 +465,12 @@ fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, S
             let all = util::run("rpm", &["-qa", "--qf", "[%{=NAME}\t%{FILENAMES}\n]"])?;
             for line in all.lines() {
                 if let Some((n, f)) = line.split_once('\t')
-                    && want.contains(n) {
-                        let e = out.entry(n.to_string()).or_default();
-                        e.push_str(f);
-                        e.push('\n');
-                    }
+                    && want.contains(n)
+                {
+                    let e = out.entry(n.to_string()).or_default();
+                    e.push_str(f);
+                    e.push('\n');
+                }
             }
         }
         _ => {}
@@ -381,7 +479,18 @@ fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, S
     // their own: classify them by what their direct dependencies ship.
     let meta: Vec<String> = want
         .iter()
-        .filter(|n| out.get(**n).map(|f| f.lines().all(|l| l.starts_with("/usr/share/doc") || l.starts_with("/usr/share/licenses") || l.trim().is_empty() || l.starts_with("/."))).unwrap_or(true))
+        .filter(|n| {
+            out.get(**n)
+                .map(|f| {
+                    f.lines().all(|l| {
+                        l.starts_with("/usr/share/doc")
+                            || l.starts_with("/usr/share/licenses")
+                            || l.trim().is_empty()
+                            || l.starts_with("/.")
+                    })
+                })
+                .unwrap_or(true)
+        })
         .map(|n| n.to_string())
         .collect();
     for n in meta {
@@ -406,20 +515,23 @@ fn direct_deps(manager: &str, pkg: &str) -> Vec<String> {
             for l in st.lines() {
                 if let Some(p) = l.strip_prefix("Package: ") {
                     in_pkg = p == pkg;
-                } else if in_pkg
-                    && let Some(d) = l.strip_prefix("Depends: ") {
-                        return d
-                            .split(',')
-                            .filter_map(|x| x.split_whitespace().next())
-                            .map(|x| x.split(':').next().unwrap_or(x).to_string())
-                            .collect();
-                    }
+                } else if in_pkg && let Some(d) = l.strip_prefix("Depends: ") {
+                    return d
+                        .split(',')
+                        .filter_map(|x| x.split_whitespace().next())
+                        .map(|x| x.split(':').next().unwrap_or(x).to_string())
+                        .collect();
+                }
             }
             vec![]
         }
         _ => {
-            let reqs = util::try_run("rpm", &["-q", "--qf", "[%{REQUIRENAME}\n]", pkg]).unwrap_or_default();
-            let reqs: Vec<&str> = reqs.lines().filter(|r| !r.starts_with("rpmlib(") && !r.starts_with('/')).collect();
+            let reqs = util::try_run("rpm", &["-q", "--qf", "[%{REQUIRENAME}\n]", pkg])
+                .unwrap_or_default();
+            let reqs: Vec<&str> = reqs
+                .lines()
+                .filter(|r| !r.starts_with("rpmlib(") && !r.starts_with('/'))
+                .collect();
             if reqs.is_empty() {
                 return vec![];
             }
@@ -451,15 +563,29 @@ fn load_brew_index() -> BTreeMap<String, String> {
     let cache = PathBuf::from("/var/cache/plexy/formula.json");
     let fresh = fs::metadata(&cache)
         .and_then(|m| m.modified())
-        .map(|t| t.elapsed().map(|e| e.as_secs() < 86400 * 7).unwrap_or(false))
+        .map(|t| {
+            t.elapsed()
+                .map(|e| e.as_secs() < 86400 * 7)
+                .unwrap_or(false)
+        })
         .unwrap_or(false);
     if !fresh {
         let _ = fs::create_dir_all(cache.parent().unwrap());
         info("downloading the Homebrew formula index");
-        if util::run("curl", &["-fsSL", "-o", &cache.display().to_string(), "https://formulae.brew.sh/api/formula.json"])
-            .is_err()
+        if util::run(
+            "curl",
+            &[
+                "-fsSL",
+                "-o",
+                &cache.display().to_string(),
+                "https://formulae.brew.sh/api/formula.json",
+            ],
+        )
+        .is_err()
         {
-            warn("could not download the Homebrew formula index; brew routing limited to known names");
+            warn(
+                "could not download the Homebrew formula index; brew routing limited to known names",
+            );
             return BTreeMap::new();
         }
     }
@@ -483,10 +609,13 @@ fn write_plan_dir(m: &manifest::Manifest, p: &plan::Plan, dir: &Path) -> Result<
 /// than FROM the target.
 fn derived_needed(dir: &Path) -> bool {
     let cf = fs::read_to_string(dir.join("system/Containerfile")).unwrap_or_default();
-    cf.lines().any(|l| l.starts_with("RUN ") && !l.contains("bootc container lint") || l.starts_with("COPY "))
+    cf.lines().any(|l| {
+        l.starts_with("RUN ") && !l.contains("bootc container lint") || l.starts_with("COPY ")
+    })
 }
 
 fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
+    util::ensure_tools(&[("podman", "podman")])?;
     {
         if derived_needed(dir) {
             step(format!("building derived system image {}", p.derived_image));
@@ -497,7 +626,10 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
         }
     }
     if let Some(tb) = &p.toolbox {
-        step(format!("building toolbox image {} from {}", tb.image_tag, tb.base_image));
+        step(format!(
+            "building toolbox image {} from {}",
+            tb.image_tag, tb.base_image
+        ));
         build::podman_build(&dir.join("toolbox"), &tb.image_tag)?;
         let staging = Path::new("/var/lib/plexy/staging");
         fs::create_dir_all(staging)?;
@@ -505,7 +637,14 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
         let _ = fs::remove_file(&archive);
         util::run_visible(
             "podman",
-            &["save", "--format", "oci-archive", "-o", &archive.display().to_string(), &tb.image_tag],
+            &[
+                "save",
+                "--format",
+                "oci-archive",
+                "-o",
+                &archive.display().to_string(),
+                &tb.image_tag,
+            ],
         )?;
     }
     Ok(())
@@ -513,8 +652,13 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
 
 fn confirm_destructive(p: &plan::Plan, yes: bool) -> Result<()> {
     println!();
-    println!("  About to replace the operating system with {} ({:?} backend).", p.target_image, p.backend);
-    println!("  /boot and the EFI boot entries will be rewritten; data, accounts and settings are carried over.");
+    println!(
+        "  About to replace the operating system with {} ({:?} backend).",
+        p.target_image, p.backend
+    );
+    println!(
+        "  /boot and the EFI boot entries will be rewritten; data, accounts and settings are carried over."
+    );
     println!("  A backup of /boot and the ESP is written to /var/lib/plexy/backup.");
     if yes {
         return Ok(());
@@ -545,10 +689,20 @@ fn do_apply(
         target::Backend::Bootc => {
             let derived = derived_needed(dir);
             if derived {
-                let _ = util::run("cp", &["-a", &dir.join("system").display().to_string(), &staging.join("system").display().to_string()]);
+                let _ = util::run(
+                    "cp",
+                    &[
+                        "-a",
+                        &dir.join("system").display().to_string(),
+                        &staging.join("system").display().to_string(),
+                    ],
+                );
             }
             let (image, transport) = if derived {
-                (p.derived_image.clone(), Some("containers-storage".to_string()))
+                (
+                    p.derived_image.clone(),
+                    Some("containers-storage".to_string()),
+                )
             } else {
                 (p.target_image.clone(), None)
             };
@@ -580,7 +734,15 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
     confirm_destructive(&p, yes)?;
     // On an image-based host /etc and /var already survive a switch (3-way merge).
     if derived_needed(&dir) {
-        util::run_visible("bootc", &["switch", "--transport", "containers-storage", &p.derived_image])
+        util::run_visible(
+            "bootc",
+            &[
+                "switch",
+                "--transport",
+                "containers-storage",
+                &p.derived_image,
+            ],
+        )
     } else {
         util::run_visible("bootc", &["switch", &p.target_image])
     }
@@ -593,8 +755,8 @@ fn cleanup(yes: bool) -> Result<()> {
     }
     let sysroot = Path::new("/sysroot");
     let old: Vec<PathBuf> = [
-        "bin", "sbin", "lib", "lib32", "lib64", "libx32", "usr", "etc", "opt", "srv", "snap", "root", "home", "media",
-        "mnt", "var", "cdrom", "swap.img",
+        "bin", "sbin", "lib", "lib32", "lib64", "libx32", "usr", "etc", "opt", "srv", "snap",
+        "root", "home", "media", "mnt", "var", "cdrom", "swap.img",
     ]
     .iter()
     .map(|d| sysroot.join(d))
@@ -621,7 +783,10 @@ fn cleanup(yes: bool) -> Result<()> {
     util::run_visible("mount", &["-o", "remount,rw", "/sysroot"])?;
     for p in &old {
         // never cross into filesystems still mounted as the new /var or /var/home
-        util::run_visible("rm", &["-rf", "--one-file-system", &p.display().to_string()])?;
+        util::run_visible(
+            "rm",
+            &["-rf", "--one-file-system", &p.display().to_string()],
+        )?;
     }
     let _ = util::run("mount", &["-o", "remount,ro", "/sysroot"]);
     Ok(())

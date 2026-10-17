@@ -16,18 +16,27 @@ use std::path::{Path, PathBuf};
 pub const STATE: &str = "/var/lib/plexy";
 
 fn load_plan() -> Result<Plan> {
-    crate::plan::load(&Path::new(STATE).join("plan.json")).context("no plan at /var/lib/plexy/plan.json")
+    crate::plan::load(&Path::new(STATE).join("plan.json"))
+        .context("no plan at /var/lib/plexy/plan.json")
 }
 
 pub fn firstboot() -> Result<()> {
     let plan = load_plan()?;
-    let mut report = vec![format!("Plexy migration to {} completed first boot.", plan.target_image)];
+    let mut report = vec![format!(
+        "Plexy migration to {} completed first boot.",
+        plan.target_image
+    )];
 
     if have("dconf") && Path::new("/etc/dconf/db").exists() {
         let _ = run("dconf", &["update"]);
         report.push("system dconf databases rebuilt".into());
     }
-    if have("update-ca-trust") && Path::new("/etc/pki/ca-trust/source/anchors").read_dir().map(|mut d| d.next().is_some()).unwrap_or(false) {
+    if have("update-ca-trust")
+        && Path::new("/etc/pki/ca-trust/source/anchors")
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
+    {
         let _ = run("update-ca-trust", &["extract"]);
         report.push("custom CA certificates re-trusted".into());
     }
@@ -38,7 +47,10 @@ pub fn firstboot() -> Result<()> {
         let _ = run("systemd-sysusers", &[] as &[&str]);
     }
     if Path::new("/sys/fs/selinux/enforce").exists() && Path::new(STATE).join("relabel").exists() {
-        for p in fs::read_to_string(Path::new(STATE).join("relabel")).unwrap_or_default().lines() {
+        for p in fs::read_to_string(Path::new(STATE).join("relabel"))
+            .unwrap_or_default()
+            .lines()
+        {
             let _ = run("restorecon", &["-RF", p]);
         }
         report.push("SELinux labels restored on migrated data".into());
@@ -46,24 +58,44 @@ pub fn firstboot() -> Result<()> {
     if !plan.flatpaks_to_install.is_empty() && have("flatpak") {
         let _ = run(
             "flatpak",
-            &["remote-add", "--system", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"],
+            &[
+                "remote-add",
+                "--system",
+                "--if-not-exists",
+                "flathub",
+                "https://dl.flathub.org/repo/flathub.flatpakrepo",
+            ],
         );
         let mut args = vec!["install", "--system", "--noninteractive", "-y", "flathub"];
         args.extend(plan.flatpaks_to_install.iter().map(String::as_str));
         match run("flatpak", &args) {
-            Ok(_) => report.push(format!("installed Flatpaks: {}", plan.flatpaks_to_install.join(", "))),
-            Err(e) => report.push(format!("Flatpak install failed (will retry next boot): {e}")),
+            Ok(_) => report.push(format!(
+                "installed Flatpaks: {}",
+                plan.flatpaks_to_install.join(", ")
+            )),
+            Err(e) => report.push(format!(
+                "Flatpak install failed (will retry next boot): {e}"
+            )),
         }
     }
     // The toolbox archive is loaded by each user's rootless podman.
     let archive = Path::new(STATE).join("staging/toolbox.tar");
     if archive.exists() {
         let _ = fs::set_permissions(&archive, fs::Permissions::from_mode(0o644));
-        let _ = fs::set_permissions(Path::new(STATE).join("staging"), fs::Permissions::from_mode(0o755));
+        let _ = fs::set_permissions(
+            Path::new(STATE).join("staging"),
+            fs::Permissions::from_mode(0o755),
+        );
         let _ = fs::set_permissions(STATE, fs::Permissions::from_mode(0o755));
     }
-    write_file(&Path::new(STATE).join("report.txt"), report.join("\n") + "\n")?;
-    write_file(&Path::new(STATE).join("firstboot.done"), util::now_unix().to_string())?;
+    write_file(
+        &Path::new(STATE).join("report.txt"),
+        report.join("\n") + "\n",
+    )?;
+    write_file(
+        &Path::new(STATE).join("firstboot.done"),
+        util::now_unix().to_string(),
+    )?;
     info(report.join("; "));
     Ok(())
 }
@@ -74,7 +106,16 @@ fn home() -> PathBuf {
 
 fn notify(summary: &str, body: &str) {
     if have("notify-send") {
-        let _ = try_run("notify-send", &["--app-name=Plexy", "-i", "system-software-update", summary, body]);
+        let _ = try_run(
+            "notify-send",
+            &[
+                "--app-name=Plexy",
+                "-i",
+                "system-software-update",
+                summary,
+                body,
+            ],
+        );
     }
 }
 
@@ -122,18 +163,34 @@ fn setup_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usize> {
         } else {
             // No archive (e.g. built elsewhere): build from the saved Containerfile.
             let ctx = Path::new(STATE).join("toolbox");
-            run("podman", &["build", "-t", &tb.image_tag, &ctx.display().to_string()])?;
+            run(
+                "podman",
+                &["build", "-t", &tb.image_tag, &ctx.display().to_string()],
+            )?;
         }
     }
     let exists = try_run("podman", &["container", "exists", &tb.name]).is_some();
     if !exists {
         info(format!("creating {} container {}", tb.engine, tb.name));
         if tb.engine == "distrobox" && have("distrobox") {
-            run("distrobox", &["create", "--yes", "--name", &tb.name, "--image", &tb.image_tag])?;
+            run(
+                "distrobox",
+                &[
+                    "create",
+                    "--yes",
+                    "--name",
+                    &tb.name,
+                    "--image",
+                    &tb.image_tag,
+                ],
+            )?;
             // first enter performs distrobox's in-container setup
             run("distrobox", &["enter", "--name", &tb.name, "--", "true"])?;
         } else {
-            run("toolbox", &["create", "-y", "-c", &tb.name, "--image", &tb.image_tag])?;
+            run(
+                "toolbox",
+                &["create", "-y", "-c", &tb.name, "--image", &tb.image_tag],
+            )?;
         }
     }
     export_toolbox(plan, tb)
@@ -141,7 +198,9 @@ fn setup_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usize> {
 
 /// Commands that must not shadow the host's own tools.
 fn host_has(bin: &str) -> bool {
-    ["/usr/bin", "/usr/sbin", "/usr/local/bin"].iter().any(|d| Path::new(d).join(bin).exists())
+    ["/usr/bin", "/usr/sbin", "/usr/local/bin"]
+        .iter()
+        .any(|d| Path::new(d).join(bin).exists())
 }
 
 fn wrapper(tb: &crate::plan::ToolboxPlan, cmd: &str) -> String {
@@ -170,7 +229,11 @@ pub fn export_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usiz
                 continue;
             }
             let path = bin_dir.join(name);
-            let script = format!("#!/bin/sh\n# exported by plexy from toolbox {}\nexec {} \"$@\"\n", tb.name, wrapper(tb, b));
+            let script = format!(
+                "#!/bin/sh\n# exported by plexy from toolbox {}\nexec {} \"$@\"\n",
+                tb.name,
+                wrapper(tb, b)
+            );
             write_file(&path, script)?;
             fs::set_permissions(&path, fs::Permissions::from_mode(0o755))?;
             n += 1;
@@ -179,7 +242,16 @@ pub fn export_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usiz
             if Path::new("/usr/share/applications").join(d).exists() {
                 continue;
             }
-            let inner = run("podman", &["run", "--rm", &tb.image_tag, "cat", &format!("/usr/share/applications/{d}")]);
+            let inner = run(
+                "podman",
+                &[
+                    "run",
+                    "--rm",
+                    &tb.image_tag,
+                    "cat",
+                    &format!("/usr/share/applications/{d}"),
+                ],
+            );
             let Ok(text) = inner else { continue };
             let mut out = String::new();
             for line in text.lines() {
@@ -195,6 +267,9 @@ pub fn export_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usiz
                 }
             }
             write_file(&app_dir.join(format!("plexy-{}-{d}", tb.name)), out)?;
+            if let Some(icon) = text.lines().find_map(|l| l.strip_prefix("Icon=")) {
+                export_icon(tb, icon.trim());
+            }
             n += 1;
         }
     }
@@ -202,11 +277,41 @@ pub fn export_toolbox(plan: &Plan, tb: &crate::plan::ToolboxPlan) -> Result<usiz
     Ok(n)
 }
 
+/// Copy an icon theme entry (all sizes) out of the toolbox image so exported
+/// launchers show their real icon on the host.
+fn export_icon(tb: &crate::plan::ToolboxPlan, icon: &str) {
+    if icon.is_empty() || icon.starts_with('/') || icon.contains(['\'', '"', ' ', '$']) {
+        return;
+    }
+    let dest = home().join(".local/share");
+    let script = format!(
+        "cd /usr/share && find icons/hicolor pixmaps -name '{icon}.*' 2>/dev/null | tar -cf - -T - 2>/dev/null"
+    );
+    let cmd = format!(
+        "podman run --rm --entrypoint /bin/sh {} -c \"{}\" | tar -xf - -C {}",
+        tb.image_tag,
+        script,
+        dest.display()
+    );
+    let _ = run("/bin/sh", &["-c", &cmd]);
+    let _ = try_run(
+        "gtk-update-icon-cache",
+        &[
+            "-f",
+            "-t",
+            &dest.join("icons/hicolor").display().to_string(),
+        ],
+    );
+}
+
 fn brew_bin() -> Option<PathBuf> {
-    ["/home/linuxbrew/.linuxbrew/bin/brew", "/var/home/linuxbrew/.linuxbrew/bin/brew"]
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists())
+    [
+        "/home/linuxbrew/.linuxbrew/bin/brew",
+        "/var/home/linuxbrew/.linuxbrew/bin/brew",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .find(|p| p.exists())
 }
 
 fn setup_brew(formulas: &[String]) -> Result<Option<usize>> {
@@ -216,13 +321,18 @@ fn setup_brew(formulas: &[String]) -> Result<Option<usize>> {
             info("installing Homebrew");
             run(
                 "/bin/bash",
-                &["-c", "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""],
+                &[
+                    "-c",
+                    "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"",
+                ],
             )?;
             brew_bin().context("Homebrew did not install")?
         }
     };
     // Only the prefix owner can install into it.
-    let owner = std::os::unix::fs::MetadataExt::uid(&fs::metadata(brew.parent().unwrap().parent().unwrap())?);
+    let owner = std::os::unix::fs::MetadataExt::uid(&fs::metadata(
+        brew.parent().unwrap().parent().unwrap(),
+    )?);
     let me = std::os::unix::fs::MetadataExt::uid(&fs::metadata(home())?);
     if owner != me {
         return Ok(None);

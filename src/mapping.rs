@@ -47,7 +47,10 @@ const DEB_TO_RPM: &[(&str, &str)] = &[
     ("libvirt-clients", "libvirt-client"),
     ("virt-manager", "virt-manager"),
     ("network-manager", "NetworkManager"),
-    ("network-manager-openvpn-gnome", "NetworkManager-openvpn-gnome"),
+    (
+        "network-manager-openvpn-gnome",
+        "NetworkManager-openvpn-gnome",
+    ),
     ("wireguard", "wireguard-tools"),
     ("wireguard-tools", "wireguard-tools"),
     ("dnsutils", "bind-utils"),
@@ -98,12 +101,30 @@ const DEB_TO_RPM: &[(&str, &str)] = &[
     ("ttf-mscorefonts-installer", "mscore-fonts-all"),
     ("gnome-tweaks", "gnome-tweaks"),
     ("gnome-shell-extension-manager", "gnome-extensions-app"),
-    ("gnome-shell-extension-appindicator", "gnome-shell-extension-appindicator"),
-    ("gnome-shell-extension-dashtodock", "gnome-shell-extension-dash-to-dock"),
-    ("gnome-shell-extension-ubuntu-dock", "gnome-shell-extension-dash-to-dock"),
-    ("gnome-shell-extension-gsconnect", "gnome-shell-extension-gsconnect"),
-    ("gnome-shell-extension-caffeine", "gnome-shell-extension-caffeine"),
-    ("gnome-shell-extension-blur-my-shell", "gnome-shell-extension-blur-my-shell"),
+    (
+        "gnome-shell-extension-appindicator",
+        "gnome-shell-extension-appindicator",
+    ),
+    (
+        "gnome-shell-extension-dashtodock",
+        "gnome-shell-extension-dash-to-dock",
+    ),
+    (
+        "gnome-shell-extension-ubuntu-dock",
+        "gnome-shell-extension-dash-to-dock",
+    ),
+    (
+        "gnome-shell-extension-gsconnect",
+        "gnome-shell-extension-gsconnect",
+    ),
+    (
+        "gnome-shell-extension-caffeine",
+        "gnome-shell-extension-caffeine",
+    ),
+    (
+        "gnome-shell-extension-blur-my-shell",
+        "gnome-shell-extension-blur-my-shell",
+    ),
     ("kde-config-sddm", "sddm-kcm"),
     ("plasma-discover", "plasma-discover"),
     ("timeshift", "timeshift"),
@@ -226,26 +247,117 @@ const TO_BREW: &[(&str, &str)] = &[
 /// kernels, boot chain, package managers, release metadata.
 pub fn is_infrastructure(name: &str) -> bool {
     const EXACT: &[&str] = &[
-        "rpm", "dnf", "dnf5", "yum", "apt", "apt-utils", "dpkg", "aptitude", "snapd", "cloud-init",
-        "cloud-utils-growpart", "cloud-guest-utils", "grub2", "grub-pc", "grub-common", "shim", "efibootmgr",
-        "dracut", "initramfs-tools", "plymouth", "anaconda", "initial-setup", "gnome-initial-setup",
-        "systemd", "systemd-udev", "udev", "glibc", "libc6", "filesystem", "base-files", "base-passwd",
-        "setup", "basesystem", "bash", "coreutils", "sudo", "passwd", "shadow-utils", "login", "util-linux",
-        "ostree", "rpm-ostree", "bootc", "bootupd", "abroot", "ubuntu-pro-client", "ubuntu-advantage-tools",
-        "unattended-upgrades", "update-notifier", "update-manager", "ubuntu-release-upgrader-core",
-        "dnf-plugins-core", "dnf-automatic", "python3-dnf", "PackageKit", "packagekit", "gnome-software",
-        "linux-firmware", "microcode_ctl", "amd-ucode-firmware", "intel-microcode", "amd64-microcode",
-        "selinux-policy", "selinux-policy-targeted", "apparmor", "zram-generator-defaults", "qemu-guest-agent",
+        "rpm",
+        "dnf",
+        "dnf5",
+        "yum",
+        "apt",
+        "apt-utils",
+        "dpkg",
+        "aptitude",
+        "snapd",
+        "cloud-init",
+        "cloud-utils-growpart",
+        "cloud-guest-utils",
+        "grub2",
+        "grub-pc",
+        "grub-common",
+        "shim",
+        "efibootmgr",
+        "dracut",
+        "initramfs-tools",
+        "plymouth",
+        "anaconda",
+        "initial-setup",
+        "gnome-initial-setup",
+        "systemd",
+        "systemd-udev",
+        "udev",
+        "glibc",
+        "libc6",
+        "filesystem",
+        "base-files",
+        "base-passwd",
+        "setup",
+        "basesystem",
+        "bash",
+        "coreutils",
+        "sudo",
+        "passwd",
+        "shadow-utils",
+        "login",
+        "util-linux",
+        "ostree",
+        "rpm-ostree",
+        "bootc",
+        "bootupd",
+        "abroot",
+        "ubuntu-pro-client",
+        "ubuntu-advantage-tools",
+        "unattended-upgrades",
+        "update-notifier",
+        "update-manager",
+        "ubuntu-release-upgrader-core",
+        "dnf-plugins-core",
+        "dnf-automatic",
+        "python3-dnf",
+        "PackageKit",
+        "packagekit",
+        "gnome-software",
+        "linux-firmware",
+        "microcode_ctl",
+        "amd-ucode-firmware",
+        "intel-microcode",
+        "amd64-microcode",
+        "selinux-policy",
+        "selinux-policy-targeted",
+        "apparmor",
+        "zram-generator-defaults",
+        "qemu-guest-agent",
     ];
     const PREFIX: &[&str] = &[
-        "kernel", "linux-image", "linux-headers", "linux-modules", "linux-generic", "linux-signed", "linux-hwe",
-        "grub", "shim-", "systemd-boot", "fedora-release", "fedora-repos", "fedora-gpg-keys", "generic-release",
-        "ultramarine-release", "ultramarine-repos", "terra-release", "rpmfusion-", "ubuntu-", "debian-archive",
-        "lsb-release", "os-prober", "firmware-", "akmod", "kmod-", "dkms", "langpacks-core", "dracut-",
-        "anaconda-", "cloud-init", "ec2-", "google-guest", "walinuxagent", "WALinuxAgent", "vanilla-",
-        "abroot", "ublue-", "bluefin-",
+        "kernel",
+        "linux-image",
+        "linux-headers",
+        "linux-modules",
+        "linux-generic",
+        "linux-signed",
+        "linux-hwe",
+        "grub",
+        "shim-",
+        "systemd-boot",
+        "fedora-release",
+        "fedora-repos",
+        "fedora-gpg-keys",
+        "generic-release",
+        "ultramarine-release",
+        "ultramarine-repos",
+        "terra-release",
+        "rpmfusion-",
+        "ubuntu-",
+        "debian-archive",
+        "lsb-release",
+        "os-prober",
+        "firmware-",
+        "akmod",
+        "kmod-",
+        "dkms",
+        "langpacks-core",
+        "dracut-",
+        "anaconda-",
+        "cloud-init",
+        "ec2-",
+        "google-guest",
+        "walinuxagent",
+        "WALinuxAgent",
+        "vanilla-",
+        "abroot",
+        "ublue-",
+        "bluefin-",
     ];
-    EXACT.contains(&name) || PREFIX.iter().any(|p| name.starts_with(p)) || name.ends_with("-release")
+    EXACT.contains(&name)
+        || PREFIX.iter().any(|p| name.starts_with(p))
+        || name.ends_with("-release")
 }
 
 /// Flathub app id for a desktop application package (same names as their
@@ -255,7 +367,9 @@ pub fn app_flatpak(pkg: &str) -> Option<&'static str> {
         "vlc" | "vlc-gui-qt" => "vlc",
         "chromium-browser" => "chromium",
         "keepassxc" => "keepassxc",
-        "libreoffice-writer" | "libreoffice-calc" | "libreoffice-impress" | "libreoffice-core" => "libreoffice",
+        "libreoffice-writer" | "libreoffice-calc" | "libreoffice-impress" | "libreoffice-core" => {
+            "libreoffice"
+        }
         "obs-studio" => "obs-studio",
         "telegram-desktop" => "telegram-desktop",
         "thunderbird" => "thunderbird",
@@ -282,10 +396,18 @@ pub struct Mapped {
 }
 
 /// Map a source package name into the target family.
-pub fn map_package(name: &str, from: Family, to: Family, available: &BTreeSet<String>) -> Option<Mapped> {
+pub fn map_package(
+    name: &str,
+    from: Family,
+    to: Family,
+    available: &BTreeSet<String>,
+) -> Option<Mapped> {
     let ok = |n: &str| available.is_empty() || available.contains(n);
     if from == to {
-        return Some(Mapped { names: vec![name.to_string()], how: "same-name" });
+        return Some(Mapped {
+            names: vec![name.to_string()],
+            how: "same-name",
+        });
     }
     let table: Vec<(&str, &str)> = match (from, to) {
         (Family::Debian, Family::Fedora) => DEB_TO_RPM.to_vec(),
@@ -294,15 +416,25 @@ pub fn map_package(name: &str, from: Family, to: Family, available: &BTreeSet<St
     };
     if let Some((_, t)) = table.iter().find(|(s, _)| *s == name) {
         let names: Vec<String> = t.split_whitespace().map(str::to_string).collect();
-        return Some(Mapped { names, how: "curated" });
+        return Some(Mapped {
+            names,
+            how: "curated",
+        });
     }
     if ok(name) && !available.is_empty() {
-        return Some(Mapped { names: vec![name.to_string()], how: "same-name" });
+        return Some(Mapped {
+            names: vec![name.to_string()],
+            how: "same-name",
+        });
     }
     if let Some(r) = rule_map(name, from, to)
-        && ok(&r) {
-            return Some(Mapped { names: vec![r], how: "rule" });
-        }
+        && ok(&r)
+    {
+        return Some(Mapped {
+            names: vec![r],
+            how: "rule",
+        });
+    }
     None
 }
 
@@ -312,7 +444,8 @@ fn rule_map(name: &str, from: Family, to: Family) -> Option<String> {
             if let Some(base) = name.strip_suffix("-dev") {
                 let base = base.strip_prefix("lib").unwrap_or(base);
                 // libfoo1.2-dev -> foo-devel
-                let base = base.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-');
+                let base =
+                    base.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-');
                 return Some(format!("{base}-devel"));
             }
             if let Some(m) = name.strip_prefix("python3-") {
@@ -343,7 +476,10 @@ pub fn brew_formula(name: &str, index: &BTreeMap<String, String>) -> Option<Stri
         if f.is_empty() {
             return None;
         }
-        return index.get(*f).cloned().or_else(|| index.is_empty().then(|| f.to_string()));
+        return index
+            .get(*f)
+            .cloned()
+            .or_else(|| index.is_empty().then(|| f.to_string()));
     }
     index.get(name).cloned()
 }
@@ -353,9 +489,13 @@ pub fn brew_formula(name: &str, index: &BTreeMap<String, String>) -> Option<Stri
 /// or source build support.
 pub fn parse_brew_index(json: &str) -> BTreeMap<String, String> {
     let mut m = BTreeMap::new();
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return m };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return m;
+    };
     for f in v.as_array().into_iter().flatten() {
-        let Some(name) = f.get("name").and_then(|x| x.as_str()) else { continue };
+        let Some(name) = f.get("name").and_then(|x| x.as_str()) else {
+            continue;
+        };
         if f.get("disabled").and_then(|x| x.as_bool()) == Some(true) {
             continue;
         }
@@ -395,7 +535,13 @@ mod tests {
 
     #[test]
     fn curated_debian_to_fedora() {
-        let m = map_package("build-essential", Family::Debian, Family::Fedora, &BTreeSet::new()).unwrap();
+        let m = map_package(
+            "build-essential",
+            Family::Debian,
+            Family::Fedora,
+            &BTreeSet::new(),
+        )
+        .unwrap();
         assert_eq!(m.names, vec!["gcc", "gcc-c++", "make"]);
         assert_eq!(m.how, "curated");
         let drop = map_package("snapd", Family::Debian, Family::Fedora, &BTreeSet::new()).unwrap();
@@ -420,7 +566,14 @@ mod tests {
 
     #[test]
     fn infrastructure_detection() {
-        for n in ["kernel-core", "linux-image-generic", "grub2-efi-x64", "fedora-release-cloud", "dnf5", "cloud-init"] {
+        for n in [
+            "kernel-core",
+            "linux-image-generic",
+            "grub2-efi-x64",
+            "fedora-release-cloud",
+            "dnf5",
+            "cloud-init",
+        ] {
             assert!(is_infrastructure(n), "{n}");
         }
         for n in ["htop", "nginx", "tmux", "gnome-tweaks"] {
@@ -431,7 +584,10 @@ mod tests {
     #[test]
     fn desktop_apps_to_flathub() {
         assert_eq!(app_flatpak("vlc"), Some("org.videolan.VLC"));
-        assert_eq!(app_flatpak("libreoffice-writer"), Some("org.libreoffice.LibreOffice"));
+        assert_eq!(
+            app_flatpak("libreoffice-writer"),
+            Some("org.libreoffice.LibreOffice")
+        );
         assert_eq!(app_flatpak("htop"), None);
     }
 

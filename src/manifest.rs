@@ -38,10 +38,20 @@ pub struct Manifest {
 impl Manifest {
     /// Short tag used to name derived images (hostname, sanitised).
     pub fn hostname_tag(&self) -> String {
-        let h = self.system.hostname.clone().unwrap_or_else(|| "host".into());
+        let h = self
+            .system
+            .hostname
+            .clone()
+            .unwrap_or_else(|| "host".into());
         let t: String = h
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
             .collect();
         if t.is_empty() { "host".into() } else { t }
     }
@@ -51,7 +61,10 @@ pub fn scan() -> Result<Manifest> {
     let root = Path::new("/");
     info("detecting operating system");
     let os = os::detect_os(root);
-    info(format!("{} — family {:?}, package manager {:?}", os.pretty_name, os.family, os.pkg_manager));
+    info(format!(
+        "{} — family {:?}, package manager {:?}",
+        os.pretty_name, os.family, os.pkg_manager
+    ));
     let boot = os::detect_boot();
     let desktop = desktop::detect(root);
     info("reading package database (this can take a minute)");
@@ -90,11 +103,17 @@ fn scan_repos(family: Family) -> Vec<RepoFile> {
         let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
         entries.sort();
         for p in entries {
-            let name = p.file_name().and_then(|x| x.to_str()).unwrap_or("").to_string();
+            let name = p
+                .file_name()
+                .and_then(|x| x.to_str())
+                .unwrap_or("")
+                .to_string();
             if !(name.ends_with(".repo") || name.ends_with(".list") || name.ends_with(".sources")) {
                 continue;
             }
-            let Some(content) = read_opt(&p) else { continue };
+            let Some(content) = read_opt(&p) else {
+                continue;
+            };
             let path = p.display().to_string();
             let owner = match family {
                 Family::Fedora => crate::util::try_run("rpm", &["-qf", "--qf", "%{NAME}", &path]),
@@ -104,7 +123,12 @@ fn scan_repos(family: Family) -> Vec<RepoFile> {
             }
             .map(|o| o.trim().to_string())
             .filter(|o| !o.is_empty() && !o.contains(' '));
-            out.push(RepoFile { path, keys: referenced_keys(&content), content, owner });
+            out.push(RepoFile {
+                path,
+                keys: referenced_keys(&content),
+                content,
+                owner,
+            });
         }
     }
     out
@@ -115,7 +139,10 @@ pub fn referenced_keys(content: &str) -> Vec<String> {
     for line in content.lines() {
         let l = line.trim();
         // yum: gpgkey=file:///etc/pki/rpm-gpg/KEY (may list several, space separated)
-        if let Some(v) = l.strip_prefix("gpgkey").map(|v| v.trim_start_matches([' ', '='])) {
+        if let Some(v) = l
+            .strip_prefix("gpgkey")
+            .map(|v| v.trim_start_matches([' ', '=']))
+        {
             for k in v.split_whitespace() {
                 if let Some(p) = k.strip_prefix("file://") {
                     keys.push(p.to_string());
@@ -147,7 +174,13 @@ mod tests {
     #[test]
     fn repo_key_references() {
         let yum = "[terra]\nname=Terra\ngpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-terra file:///etc/pki/rpm-gpg/other\n";
-        assert_eq!(referenced_keys(yum), vec!["/etc/pki/rpm-gpg/RPM-GPG-KEY-terra", "/etc/pki/rpm-gpg/other"]);
+        assert_eq!(
+            referenced_keys(yum),
+            vec![
+                "/etc/pki/rpm-gpg/RPM-GPG-KEY-terra",
+                "/etc/pki/rpm-gpg/other"
+            ]
+        );
         let deb = "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable\n";
         assert_eq!(referenced_keys(deb), vec!["/etc/apt/keyrings/docker.gpg"]);
         let deb822 = "Types: deb\nURIs: https://x\nSigned-By: /usr/share/keyrings/x.gpg\n";

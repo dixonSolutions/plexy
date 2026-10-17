@@ -9,7 +9,7 @@ use crate::os::Family;
 use crate::pkg::ConfigKind;
 use crate::target::{Backend, ImageFacts};
 use crate::util::{self, info, warn};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
@@ -83,7 +83,11 @@ pub fn classify_files(files: &str) -> PkgTraits {
     for f in files.lines() {
         let f = f.trim();
         if f.starts_with("/usr/lib/systemd/system/") || f.starts_with("/lib/systemd/system/") {
-            if f.ends_with(".service") || f.ends_with(".socket") || f.ends_with(".timer") || f.ends_with(".mount") {
+            if f.ends_with(".service")
+                || f.ends_with(".socket")
+                || f.ends_with(".timer")
+                || f.ends_with(".mount")
+            {
                 t.units.push(f.rsplit('/').next().unwrap().to_string());
                 t.host_level = true;
             }
@@ -111,12 +115,17 @@ pub fn classify_files(files: &str) -> PkgTraits {
             // Launchers for terminal programs (htop, nvim) or hidden helpers do
             // not make a package a desktop app.
             let entry = std::fs::read_to_string(f).unwrap_or_default();
-            let hidden = entry.lines().any(|l| matches!(l.trim(), "Terminal=true" | "NoDisplay=true"));
+            let hidden = entry
+                .lines()
+                .any(|l| matches!(l.trim(), "Terminal=true" | "NoDisplay=true"));
             if !hidden {
                 t.gui = true;
             }
-            t.desktop_files.push(f.rsplit('/').next().unwrap().to_string());
-        } else if ["/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/games/"].iter().any(|d| f.starts_with(d))
+            t.desktop_files
+                .push(f.rsplit('/').next().unwrap().to_string());
+        } else if ["/usr/bin/", "/usr/sbin/", "/bin/", "/sbin/", "/usr/games/"]
+            .iter()
+            .any(|d| f.starts_with(d))
             && f.len() > 9
         {
             t.cli = true;
@@ -208,7 +217,11 @@ impl Plan {
         self.packages.iter().filter(|p| p.dest == d).collect()
     }
     pub fn names_for(&self, d: Dest) -> Vec<String> {
-        let mut v: Vec<String> = self.by_dest(d).iter().flat_map(|p| p.target_names.clone()).collect();
+        let mut v: Vec<String> = self
+            .by_dest(d)
+            .iter()
+            .flat_map(|p| p.target_names.clone())
+            .collect();
         v.sort();
         v.dedup();
         v
@@ -219,69 +232,212 @@ impl Plan {
 /// the package manager, the account merge, or regenerated on the new system.
 pub fn etc_denied(path: &str) -> bool {
     const EXACT: &[&str] = &[
-        "/etc/fstab", "/etc/crypttab", "/etc/mtab", "/etc/os-release", "/etc/resolv.conf", "/etc/ld.so.cache",
-        "/etc/passwd", "/etc/passwd-", "/etc/group", "/etc/group-", "/etc/shadow", "/etc/shadow-", "/etc/gshadow",
-        "/etc/gshadow-", "/etc/subuid", "/etc/subuid-", "/etc/subgid", "/etc/subgid-", "/etc/.pwd.lock",
-        "/etc/default/grub", "/etc/kernel/cmdline", "/etc/machine-info", "/etc/adjtime", "/etc/aliases.db",
-        "/etc/udev/hwdb.bin", "/etc/selinux/config", "/etc/sysconfig/kernel", "/etc/nsswitch.conf",
-        "/etc/sudoers", "/etc/login.defs", "/etc/environment", "/etc/profile", "/etc/bashrc", "/etc/bash.bashrc",
-        "/etc/issue", "/etc/issue.net", "/etc/motd", "/etc/lsb-release", "/etc/debian_version",
-        "/etc/redhat-release", "/etc/system-release", "/etc/system-release-cpe", "/etc/fedora-release",
-        "/etc/hostname.bak", "/etc/.updated", "/etc/ostree-mkinitcpio", "/etc/locale.gen", "/etc/timezone",
+        "/etc/fstab",
+        "/etc/crypttab",
+        "/etc/mtab",
+        "/etc/os-release",
+        "/etc/resolv.conf",
+        "/etc/ld.so.cache",
+        "/etc/passwd",
+        "/etc/passwd-",
+        "/etc/group",
+        "/etc/group-",
+        "/etc/shadow",
+        "/etc/shadow-",
+        "/etc/gshadow",
+        "/etc/gshadow-",
+        "/etc/subuid",
+        "/etc/subuid-",
+        "/etc/subgid",
+        "/etc/subgid-",
+        "/etc/.pwd.lock",
+        "/etc/default/grub",
+        "/etc/kernel/cmdline",
+        "/etc/machine-info",
+        "/etc/adjtime",
+        "/etc/aliases.db",
+        "/etc/udev/hwdb.bin",
+        "/etc/selinux/config",
+        "/etc/sysconfig/kernel",
+        "/etc/nsswitch.conf",
+        "/etc/sudoers",
+        "/etc/login.defs",
+        "/etc/environment",
+        "/etc/profile",
+        "/etc/bashrc",
+        "/etc/bash.bashrc",
+        "/etc/issue",
+        "/etc/issue.net",
+        "/etc/motd",
+        "/etc/lsb-release",
+        "/etc/debian_version",
+        "/etc/redhat-release",
+        "/etc/system-release",
+        "/etc/system-release-cpe",
+        "/etc/fedora-release",
+        "/etc/hostname.bak",
+        "/etc/.updated",
+        "/etc/ostree-mkinitcpio",
+        "/etc/locale.gen",
+        "/etc/timezone",
     ];
     const PREFIX: &[&str] = &[
-        "/etc/grub", "/etc/kernel/", "/etc/dracut", "/etc/initramfs-tools", "/etc/yum.repos.d/", "/etc/dnf/",
-        "/etc/yum/", "/etc/apt/", "/etc/dpkg/", "/etc/pki/rpm-gpg/", "/etc/rpm/", "/etc/selinux/",
-        "/etc/alternatives/", "/etc/ssl/certs/", "/etc/pki/ca-trust/extracted/", "/etc/pki/tls/certs/",
-        "/etc/ld.so.conf", "/etc/cloud/", "/etc/netplan/", "/etc/sysconfig/network-scripts/",
-        "/etc/systemd/system/getty.target.wants/", "/etc/systemd/system/cloud-", "/etc/ostree/",
-        "/etc/containers/storage.conf", "/etc/X11/xorg.conf.d/00-keyboard.conf", "/etc/apparmor",
-        "/etc/update-motd.d/", "/etc/cron.daily/apt", "/etc/logrotate.d/apt", "/etc/kernel-img.conf",
-        "/etc/default/apport", "/etc/snap", "/etc/profile.d/apps-bin-path.sh",
-        "/etc/rc", "/etc/init.d/", "/etc/udev/rules.d/70-persistent", "/etc/lvm/archive/", "/etc/lvm/backup/",
-        "/etc/lvm/cache/", "/etc/abroot", "/etc/sudoers.d/90-cloud-init", "/etc/ssh/sshd_config.d/50-cloud-init",
-        "/etc/ssh/sshd_config.d/60-cloudimg", "/etc/authselect/", "/etc/pam.d/switchable-auth",
-        "/etc/pam.d/system-auth", "/etc/pam.d/password-auth", "/etc/pam.d/fingerprint-auth",
-        "/etc/pam.d/smartcard-auth", "/etc/pam.d/postlogin", "/etc/dconf/db/distro.d/", "/etc/issue.d/",
-        "/etc/sysconfig/bootloader", "/etc/shells", "/etc/systemd/system/dbus", "/etc/systemd/system/display-manager.service",
-        "/etc/systemd/user/dbus", "/etc/vconsole.conf.bak", "/etc/plymouth/", "/etc/crypto-policies/back-ends/",
+        "/etc/grub",
+        "/etc/kernel/",
+        "/etc/dracut",
+        "/etc/initramfs-tools",
+        "/etc/yum.repos.d/",
+        "/etc/dnf/",
+        "/etc/yum/",
+        "/etc/apt/",
+        "/etc/dpkg/",
+        "/etc/pki/rpm-gpg/",
+        "/etc/rpm/",
+        "/etc/selinux/",
+        "/etc/alternatives/",
+        "/etc/ssl/certs/",
+        "/etc/pki/ca-trust/extracted/",
+        "/etc/pki/tls/certs/",
+        "/etc/ld.so.conf",
+        "/etc/cloud/",
+        "/etc/netplan/",
+        "/etc/sysconfig/network-scripts/",
+        "/etc/systemd/system/getty.target.wants/",
+        "/etc/systemd/system/cloud-",
+        "/etc/ostree/",
+        "/etc/containers/storage.conf",
+        "/etc/X11/xorg.conf.d/00-keyboard.conf",
+        "/etc/apparmor",
+        "/etc/update-motd.d/",
+        "/etc/cron.daily/apt",
+        "/etc/logrotate.d/apt",
+        "/etc/kernel-img.conf",
+        "/etc/default/apport",
+        "/etc/snap",
+        "/etc/profile.d/apps-bin-path.sh",
+        "/etc/rc",
+        "/etc/init.d/",
+        "/etc/udev/rules.d/70-persistent",
+        "/etc/lvm/archive/",
+        "/etc/lvm/backup/",
+        "/etc/lvm/cache/",
+        "/etc/abroot",
+        "/etc/sudoers.d/90-cloud-init",
+        "/etc/ssh/sshd_config.d/50-cloud-init",
+        "/etc/ssh/sshd_config.d/60-cloudimg",
+        "/etc/authselect/",
+        "/etc/pam.d/switchable-auth",
+        "/etc/pam.d/system-auth",
+        "/etc/pam.d/password-auth",
+        "/etc/pam.d/fingerprint-auth",
+        "/etc/pam.d/smartcard-auth",
+        "/etc/pam.d/postlogin",
+        "/etc/dconf/db/distro.d/",
+        "/etc/issue.d/",
+        "/etc/sysconfig/bootloader",
+        "/etc/shells",
+        "/etc/systemd/system/dbus",
+        "/etc/systemd/system/display-manager.service",
+        "/etc/systemd/user/dbus",
+        "/etc/vconsole.conf.bak",
+        "/etc/plymouth/",
+        "/etc/crypto-policies/back-ends/",
     ];
     // Enablement symlinks are recreated by replaying unit state on the target;
     // copying them would resurrect units that do not exist there.
-    if [".wants/", ".requires/", ".upholds/"].iter().any(|w| path.contains(w)) {
+    if [".wants/", ".requires/", ".upholds/"]
+        .iter()
+        .any(|w| path.contains(w))
+    {
         return true;
     }
     // default.target & co: the target's default (graphical vs multi-user) wins.
-    if path.starts_with("/etc/systemd/system/") && path.ends_with(".target") && !path[20..].contains('/') {
+    if path.starts_with("/etc/systemd/system/")
+        && path.ends_with(".target")
+        && !path[20..].contains('/')
+    {
         return true;
     }
     // Compiled dconf databases are rebuilt by `dconf update` on first boot.
     if let Some(rest) = path.strip_prefix("/etc/dconf/db/")
-        && !rest.contains('/') {
-            return true;
-        }
-    EXACT.contains(&path) || PREFIX.iter().any(|p| path.starts_with(p)) || path.ends_with(".rpmnew")
-        || path.ends_with(".rpmsave") || path.ends_with(".dpkg-old") || path.ends_with(".dpkg-dist")
-        || path.ends_with('~') || path.ends_with(".bak") || path.ends_with(".swp")
+        && !rest.contains('/')
+    {
+        return true;
+    }
+    EXACT.contains(&path)
+        || PREFIX.iter().any(|p| path.starts_with(p))
+        || path.ends_with(".rpmnew")
+        || path.ends_with(".rpmsave")
+        || path.ends_with(".dpkg-old")
+        || path.ends_with(".dpkg-dist")
+        || path.ends_with('~')
+        || path.ends_with(".bak")
+        || path.ends_with(".swp")
 }
 
 /// Config that is meaningful on any distribution (copied even across families).
 pub fn etc_portable(path: &str) -> bool {
-    const EXACT: &[&str] = &["/etc/hostname", "/etc/machine-id", "/etc/localtime", "/etc/hosts", "/etc/vconsole.conf",
-        "/etc/locale.conf", "/etc/tmux.conf", "/etc/vimrc", "/etc/inputrc", "/etc/gdm/custom.conf",
-        "/etc/sddm.conf", "/etc/wgetrc", "/etc/gitconfig", "/etc/exports", "/etc/chrony.conf"];
+    const EXACT: &[&str] = &[
+        "/etc/hostname",
+        "/etc/machine-id",
+        "/etc/localtime",
+        "/etc/hosts",
+        "/etc/vconsole.conf",
+        "/etc/locale.conf",
+        "/etc/tmux.conf",
+        "/etc/vimrc",
+        "/etc/inputrc",
+        "/etc/gdm/custom.conf",
+        "/etc/sddm.conf",
+        "/etc/wgetrc",
+        "/etc/gitconfig",
+        "/etc/exports",
+        "/etc/chrony.conf",
+    ];
     const PREFIX: &[&str] = &[
-        "/etc/NetworkManager/system-connections/", "/etc/NetworkManager/conf.d/", "/etc/ssh/ssh_host_",
-        "/etc/ssh/sshd_config.d/", "/etc/ssh/ssh_config.d/", "/etc/sudoers.d/", "/etc/sysctl.d/",
-        "/etc/modprobe.d/", "/etc/modules-load.d/", "/etc/udev/rules.d/", "/etc/security/limits.d/",
-        "/etc/systemd/system/", "/etc/systemd/user/", "/etc/systemd/network/", "/etc/systemd/resolved.conf.d/",
-        "/etc/systemd/journald.conf.d/", "/etc/systemd/logind.conf.d/", "/etc/tmpfiles.d/", "/etc/sysusers.d/",
-        "/etc/wireguard/", "/etc/containers/registries.conf.d/", "/etc/containers/systemd/",
-        "/etc/pki/ca-trust/source/anchors/", "/etc/dconf/db/", "/etc/dconf/profile/", "/etc/X11/xorg.conf.d/",
-        "/etc/fonts/local.conf", "/etc/environment.d/", "/etc/profile.d/", "/etc/cups/printers.conf",
-        "/etc/cups/ppd/", "/etc/libvirt/qemu/", "/etc/nginx/", "/etc/httpd/", "/etc/docker/daemon.json",
-        "/etc/tailscale/", "/etc/firewalld/zones/", "/etc/gdm/", "/etc/sddm.conf.d/", "/etc/xdg/",
-        "/etc/polkit-1/rules.d/", "/etc/samba/smb.conf", "/etc/opt/",
+        "/etc/NetworkManager/system-connections/",
+        "/etc/NetworkManager/conf.d/",
+        "/etc/ssh/ssh_host_",
+        "/etc/ssh/sshd_config.d/",
+        "/etc/ssh/ssh_config.d/",
+        "/etc/sudoers.d/",
+        "/etc/sysctl.d/",
+        "/etc/modprobe.d/",
+        "/etc/modules-load.d/",
+        "/etc/udev/rules.d/",
+        "/etc/security/limits.d/",
+        "/etc/systemd/system/",
+        "/etc/systemd/user/",
+        "/etc/systemd/network/",
+        "/etc/systemd/resolved.conf.d/",
+        "/etc/systemd/journald.conf.d/",
+        "/etc/systemd/logind.conf.d/",
+        "/etc/tmpfiles.d/",
+        "/etc/sysusers.d/",
+        "/etc/wireguard/",
+        "/etc/containers/registries.conf.d/",
+        "/etc/containers/systemd/",
+        "/etc/pki/ca-trust/source/anchors/",
+        "/etc/dconf/db/",
+        "/etc/dconf/profile/",
+        "/etc/X11/xorg.conf.d/",
+        "/etc/fonts/local.conf",
+        "/etc/environment.d/",
+        "/etc/profile.d/",
+        "/etc/cups/printers.conf",
+        "/etc/cups/ppd/",
+        "/etc/libvirt/qemu/",
+        "/etc/nginx/",
+        "/etc/httpd/",
+        "/etc/docker/daemon.json",
+        "/etc/tailscale/",
+        "/etc/firewalld/zones/",
+        "/etc/gdm/",
+        "/etc/sddm.conf.d/",
+        "/etc/xdg/",
+        "/etc/polkit-1/rules.d/",
+        "/etc/samba/smb.conf",
+        "/etc/opt/",
     ];
     EXACT.contains(&path) || PREFIX.iter().any(|p| path.starts_with(p))
 }
@@ -299,10 +455,12 @@ pub fn etc_translate(path: &str, from: Family, to: Family) -> String {
             return format!("/etc/pki/ca-trust/source/anchors/{r}");
         }
     }
-    if from == Family::Fedora && to == Family::Debian
-        && let Some(r) = path.strip_prefix("/etc/gdm/") {
-            return format!("/etc/gdm3/{r}");
-        }
+    if from == Family::Fedora
+        && to == Family::Debian
+        && let Some(r) = path.strip_prefix("/etc/gdm/")
+    {
+        return format!("/etc/gdm3/{r}");
+    }
     path.to_string()
 }
 
@@ -337,7 +495,9 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                 m.desktop.primary.map(Desktop::label).unwrap_or("?")
             );
             if !inp.allow_desktop_change {
-                bail!("{msg}. Pick a desktop image (see `plexy targets`) or pass --allow-desktop-change");
+                bail!(
+                    "{msg}. Pick a desktop image (see `plexy targets`) or pass --allow-desktop-change"
+                );
             }
             warnings.push(msg);
         }
@@ -350,14 +510,22 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                 target.label()
             );
             if !inp.allow_desktop_change {
-                bail!("{msg}. Choose a {} target (see `plexy targets`) or pass --allow-desktop-change", source.label());
+                bail!(
+                    "{msg}. Choose a {} target (see `plexy targets`) or pass --allow-desktop-change",
+                    source.label()
+                );
             }
             warnings.push(msg);
         }
     }
 
     let backend = t.backend.unwrap_or(Backend::Bootc);
-    let user: BTreeSet<&str> = m.packages.user_installed.iter().map(|p| p.name.as_str()).collect();
+    let user: BTreeSet<&str> = m
+        .packages
+        .user_installed
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
 
     // --- which packages are candidates -------------------------------------
     let all = inp.mode == Mode::Toolbox || inp.include_preinstalled;
@@ -366,15 +534,33 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             .packages
             .installed
             .keys()
-            .map(|n| (n.clone(), if user.contains(n.as_str()) { "user" } else { "preinstalled" }))
+            .map(|n| {
+                (
+                    n.clone(),
+                    if user.contains(n.as_str()) {
+                        "user"
+                    } else {
+                        "preinstalled"
+                    },
+                )
+            })
             .collect(),
-        false => m.packages.user_installed.iter().map(|p| (p.name.clone(), "user")).collect(),
+        false => m
+            .packages
+            .user_installed
+            .iter()
+            .map(|p| (p.name.clone(), "user"))
+            .collect(),
     };
 
     let toolbox_possible = matches!(from, Family::Fedora | Family::Debian);
     let mut pkgs = vec![];
     for (name, origin) in candidates {
-        let traits = inp.files.get(&name).map(|f| classify_files(f)).unwrap_or_default();
+        let traits = inp
+            .files
+            .get(&name)
+            .map(|f| classify_files(f))
+            .unwrap_or_default();
         let mut p = PlannedPkg {
             name: name.clone(),
             dest: Dest::Skip,
@@ -384,7 +570,8 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             traits: traits.clone(),
         };
         if is_infrastructure(&name) {
-            p.why = "boot chain / package manager / release metadata: provided by the target".into();
+            p.why =
+                "boot chain / package manager / release metadata: provided by the target".into();
             pkgs.push(p);
             continue;
         }
@@ -419,8 +606,14 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             continue;
         }
 
-        let image_ok = mapped.as_ref().map(|mp| !mp.names.is_empty()).unwrap_or(false);
-        let image_names = mapped.as_ref().map(|mp| mp.names.clone()).unwrap_or_default();
+        let image_ok = mapped
+            .as_ref()
+            .map(|mp| !mp.names.is_empty())
+            .unwrap_or(false);
+        let image_names = mapped
+            .as_ref()
+            .map(|mp| mp.names.clone())
+            .unwrap_or_default();
         let formula = if traits.cli && !traits.host_level && !traits.gui {
             mapping::brew_formula(&name, &inp.brew_index)
         } else {
@@ -434,7 +627,10 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                 p.why = why.into();
             } else {
                 p.dest = Dest::Skip;
-                p.why = format!("{why}, but no package with this name exists for {}", t.pretty_name);
+                p.why = format!(
+                    "{why}, but no package with this name exists for {}",
+                    t.pretty_name
+                );
             }
         };
 
@@ -445,7 +641,9 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                 } else if toolbox_possible {
                     p.dest = Dest::Toolbox;
                     p.target_names = vec![name.clone()];
-                    p.why = "no equivalent package for the target; keep it in a source-distro toolbox".into();
+                    p.why =
+                        "no equivalent package for the target; keep it in a source-distro toolbox"
+                            .into();
                 } else {
                     p.why = "no equivalent package found".into();
                 }
@@ -465,8 +663,14 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             }
             Mode::Toolbox | Mode::Hybrid => {
                 if traits.host_level {
-                    route_host(&mut p, "system-level (services/drivers/shell extensions must run on the host)");
-                } else if inp.mode == Mode::Hybrid && traits.gui && mapping::app_flatpak(&name).is_some() {
+                    route_host(
+                        &mut p,
+                        "system-level (services/drivers/shell extensions must run on the host)",
+                    );
+                } else if inp.mode == Mode::Hybrid
+                    && traits.gui
+                    && mapping::app_flatpak(&name).is_some()
+                {
                     p.dest = Dest::Flatpak;
                     p.target_names = vec![mapping::app_flatpak(&name).unwrap().to_string()];
                     p.why = "desktop app: the Flathub build replaces the distro package".into();
@@ -478,7 +682,8 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     p.dest = Dest::Toolbox;
                     p.target_names = vec![name.clone()];
                     p.why = if traits.gui {
-                        "desktop app: runs in the toolbox, launcher exported to the host menu".into()
+                        "desktop app: runs in the toolbox, launcher exported to the host menu"
+                            .into()
                     } else {
                         "runs in the toolbox, commands exported to ~/.local/bin".into()
                     };
@@ -505,10 +710,16 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     traits: PkgTraits::default(),
                 });
             }
-            None => warnings.push(format!("snap '{}' has no known Flatpak equivalent; reinstall it manually", s.name)),
+            None => warnings.push(format!(
+                "snap '{}' has no known Flatpak equivalent; reinstall it manually",
+                s.name
+            )),
         }
     }
-    for p in pkgs.iter().filter(|p| p.dest == Dest::Flatpak && !p.name.starts_with("snap:")) {
+    for p in pkgs
+        .iter()
+        .filter(|p| p.dest == Dest::Flatpak && !p.name.starts_with("snap:"))
+    {
         flatpaks.extend(p.target_names.iter().cloned());
     }
     flatpaks.sort();
@@ -574,14 +785,28 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
     let image_repos_ok = from == to
         && (from == Family::Fedora || (m.os.id == t.os_id && m.os.version_id == t.os_version));
     let repo_files: Vec<String> = if image_repos_ok {
-        m.repos.iter().filter(needed).map(|r| r.path.clone()).collect()
+        m.repos
+            .iter()
+            .filter(needed)
+            .map(|r| r.path.clone())
+            .collect()
     } else {
         vec![]
     };
     let toolbox_repo_files: Vec<String> = m
         .repos
         .iter()
-        .filter(|r| r.owner.as_deref().map(|o| !mapping::is_infrastructure(o) || o.contains("rpmfusion") || o.starts_with("terra") || o.starts_with("ultramarine-repos")).unwrap_or(true))
+        .filter(|r| {
+            r.owner
+                .as_deref()
+                .map(|o| {
+                    !mapping::is_infrastructure(o)
+                        || o.contains("rpmfusion")
+                        || o.starts_with("terra")
+                        || o.starts_with("ultramarine-repos")
+                })
+                .unwrap_or(true)
+        })
         .map(|r| r.path.clone())
         .collect();
     if !image_repos_ok && m.repos.iter().any(|r| r.owner.is_none()) {
@@ -592,7 +817,13 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
     }
 
     let toolbox = if pkgs.iter().any(|p| p.dest == Dest::Toolbox) {
-        let engine = if t.has_distrobox { "distrobox" } else if t.has_toolbox { "toolbox" } else { "distrobox" };
+        let engine = if t.has_distrobox {
+            "distrobox"
+        } else if t.has_toolbox {
+            "toolbox"
+        } else {
+            "distrobox"
+        };
         if !t.has_distrobox && !t.has_toolbox {
             warnings.push("target has neither distrobox nor toolbox; distrobox will be layered into the image".into());
         }
@@ -658,23 +889,47 @@ pub fn toolbox_base_image(id: &str, family: Family, version: &str) -> String {
 
 pub fn print_summary(p: &Plan) {
     println!();
-    println!("  source : {} ({:?}, desktop: {})", p.source, p.source_family,
-        p.source_desktop.map(Desktop::label).unwrap_or("?"));
-    println!("  target : {} [{}] ({:?}, desktop: {}, backend: {:?})", p.target_name, p.target_image,
-        p.target_family, p.target_desktop.map(Desktop::label).unwrap_or("?"), p.backend);
+    println!(
+        "  source : {} ({:?}, desktop: {})",
+        p.source,
+        p.source_family,
+        p.source_desktop.map(Desktop::label).unwrap_or("?")
+    );
+    println!(
+        "  target : {} [{}] ({:?}, desktop: {}, backend: {:?})",
+        p.target_name,
+        p.target_image,
+        p.target_family,
+        p.target_desktop.map(Desktop::label).unwrap_or("?"),
+        p.backend
+    );
     println!("  mode   : {:?}", p.mode);
     println!();
-    for d in [Dest::Base, Dest::Image, Dest::Toolbox, Dest::Brew, Dest::Flatpak, Dest::Skip] {
+    for d in [
+        Dest::Base,
+        Dest::Image,
+        Dest::Toolbox,
+        Dest::Brew,
+        Dest::Flatpak,
+        Dest::Skip,
+    ] {
         let v = p.by_dest(d);
         if v.is_empty() {
             continue;
         }
         println!("  {:<30} {:>5} package(s)", d.label(), v.len());
-        if matches!(d, Dest::Image | Dest::Brew | Dest::Flatpak) || (d == Dest::Toolbox && v.len() <= 40) {
+        if matches!(d, Dest::Image | Dest::Brew | Dest::Flatpak)
+            || (d == Dest::Toolbox && v.len() <= 40)
+        {
             let names: Vec<String> = v
                 .iter()
-                .map(|x| if x.target_names.len() == 1 && x.target_names[0] == x.name { x.name.clone() }
-                     else { format!("{}→{}", x.name, x.target_names.join("+")) })
+                .map(|x| {
+                    if x.target_names.len() == 1 && x.target_names[0] == x.name {
+                        x.name.clone()
+                    } else {
+                        format!("{}→{}", x.name, x.target_names.join("+"))
+                    }
+                })
                 .collect();
             for chunk in names.chunks(6) {
                 println!("      {}", chunk.join("  "));
@@ -683,10 +938,18 @@ pub fn print_summary(p: &Plan) {
     }
     let n = |a: ConfigAction| p.configs.iter().filter(|c| c.action == a).count();
     println!();
-    println!("  config files: {} → /etc, {} → toolbox, {} → brew, {} skipped",
-        n(ConfigAction::Etc), n(ConfigAction::Toolbox), n(ConfigAction::Brew), n(ConfigAction::Skip));
+    println!(
+        "  config files: {} → /etc, {} → toolbox, {} → brew, {} skipped",
+        n(ConfigAction::Etc),
+        n(ConfigAction::Toolbox),
+        n(ConfigAction::Brew),
+        n(ConfigAction::Skip)
+    );
     if let Some(tb) = &p.toolbox {
-        println!("  toolbox: {} '{}' from {}", tb.engine, tb.name, tb.base_image);
+        println!(
+            "  toolbox: {} '{}' from {}",
+            tb.engine, tb.name, tb.base_image
+        );
     }
     for w in &p.warnings {
         warn(w);
@@ -698,7 +961,10 @@ pub fn print_summary(p: &Plan) {
 pub fn review(plan: &mut Plan, input: &mut dyn BufRead, out: &mut dyn Write) -> Result<bool> {
     loop {
         print_summary(plan);
-        writeln!(out, "  [a]ccept  [m]ove a package  [g]roup move  [l]ist a group  [q]uit without changes")?;
+        writeln!(
+            out,
+            "  [a]ccept  [m]ove a package  [g]roup move  [l]ist a group  [q]uit without changes"
+        )?;
         write!(out, "  choice> ")?;
         out.flush()?;
         let mut line = String::new();
@@ -794,9 +1060,13 @@ mod tests {
         );
         assert!(t.host_level && t.cli);
         assert_eq!(t.units, vec!["nginx.service"]);
-        let t = classify_files("/usr/bin/plexyapp\n/usr/share/applications/plexy-test-app.desktop\n/usr/share/man/man1/plexyapp.1.gz\n");
+        let t = classify_files(
+            "/usr/bin/plexyapp\n/usr/share/applications/plexy-test-app.desktop\n/usr/share/man/man1/plexyapp.1.gz\n",
+        );
         assert!(t.cli && t.gui && !t.host_level);
-        let t = classify_files("/usr/share/gnome-shell/extensions/appindicatorsupport@rgcjonas.gmail.com/metadata.json\n");
+        let t = classify_files(
+            "/usr/share/gnome-shell/extensions/appindicatorsupport@rgcjonas.gmail.com/metadata.json\n",
+        );
         assert!(t.shell_extension && t.host_level);
         let t = classify_files("/usr/bin/\n/usr/share/doc/x/README\n");
         assert!(!t.cli);
@@ -809,29 +1079,53 @@ mod tests {
         assert!(etc_denied("/etc/apt/sources.list"));
         assert!(etc_denied("/etc/nginx/nginx.conf.rpmnew"));
         assert!(!etc_denied("/etc/nginx/nginx.conf"));
-        assert!(etc_denied("/etc/systemd/system/multi-user.target.wants/nginx.service"));
+        assert!(etc_denied(
+            "/etc/systemd/system/multi-user.target.wants/nginx.service"
+        ));
         assert!(etc_denied("/etc/systemd/system/default.target"));
         assert!(!etc_denied("/etc/systemd/system/myapp.service"));
-        assert!(!etc_denied("/etc/systemd/system/nginx.service.d/override.conf"));
+        assert!(!etc_denied(
+            "/etc/systemd/system/nginx.service.d/override.conf"
+        ));
         assert!(etc_denied("/etc/dconf/db/local"));
         assert!(!etc_denied("/etc/dconf/db/local.d/00-custom"));
         assert!(etc_denied("/etc/authselect/system-auth"));
-        assert!(etc_portable("/etc/NetworkManager/system-connections/home.nmconnection"));
+        assert!(etc_portable(
+            "/etc/NetworkManager/system-connections/home.nmconnection"
+        ));
         assert!(etc_portable("/etc/ssh/ssh_host_ed25519_key"));
         assert!(!etc_portable("/etc/apt/apt.conf.d/10periodic"));
     }
 
     #[test]
     fn etc_translation() {
-        assert_eq!(etc_translate("/etc/gdm3/custom.conf", Family::Debian, Family::Fedora), "/etc/gdm/custom.conf");
-        assert_eq!(etc_translate("/etc/gdm/custom.conf", Family::Fedora, Family::Debian), "/etc/gdm3/custom.conf");
-        assert_eq!(etc_translate("/etc/hosts", Family::Debian, Family::Fedora), "/etc/hosts");
+        assert_eq!(
+            etc_translate("/etc/gdm3/custom.conf", Family::Debian, Family::Fedora),
+            "/etc/gdm/custom.conf"
+        );
+        assert_eq!(
+            etc_translate("/etc/gdm/custom.conf", Family::Fedora, Family::Debian),
+            "/etc/gdm3/custom.conf"
+        );
+        assert_eq!(
+            etc_translate("/etc/hosts", Family::Debian, Family::Fedora),
+            "/etc/hosts"
+        );
     }
 
     #[test]
     fn toolbox_images() {
-        assert_eq!(toolbox_base_image("fedora", Family::Fedora, "44"), "registry.fedoraproject.org/fedora-toolbox:44");
-        assert_eq!(toolbox_base_image("ultramarine", Family::Fedora, "44"), "registry.fedoraproject.org/fedora-toolbox:44");
-        assert_eq!(toolbox_base_image("ubuntu", Family::Debian, "26.04"), "quay.io/toolbx/ubuntu-toolbox:26.04");
+        assert_eq!(
+            toolbox_base_image("fedora", Family::Fedora, "44"),
+            "registry.fedoraproject.org/fedora-toolbox:44"
+        );
+        assert_eq!(
+            toolbox_base_image("ultramarine", Family::Fedora, "44"),
+            "registry.fedoraproject.org/fedora-toolbox:44"
+        );
+        assert_eq!(
+            toolbox_base_image("ubuntu", Family::Debian, "26.04"),
+            "quay.io/toolbx/ubuntu-toolbox:26.04"
+        );
     }
 }

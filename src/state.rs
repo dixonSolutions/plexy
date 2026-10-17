@@ -33,7 +33,10 @@ impl PasswdEntry {
         })
     }
     pub fn to_line(&self) -> String {
-        format!("{}:x:{}:{}:{}:{}:{}", self.name, self.uid, self.gid, self.gecos, self.home, self.shell)
+        format!(
+            "{}:x:{}:{}:{}:{}:{}",
+            self.name, self.uid, self.gid, self.gecos, self.home, self.shell
+        )
     }
 }
 
@@ -53,7 +56,11 @@ impl GroupEntry {
         Some(GroupEntry {
             name: f[0].into(),
             gid: f[2].parse().ok()?,
-            members: f[3].split(',').filter(|m| !m.is_empty()).map(str::to_string).collect(),
+            members: f[3]
+                .split(',')
+                .filter(|m| !m.is_empty())
+                .map(str::to_string)
+                .collect(),
         })
     }
     pub fn to_line(&self) -> String {
@@ -107,11 +114,19 @@ pub fn scan_accounts(root: &Path) -> Accounts {
         .collect();
     let mut memberships = BTreeMap::new();
     for h in &humans {
-        let gs: Vec<String> =
-            groups.iter().filter(|g| g.members.contains(&h.name)).map(|g| g.name.clone()).collect();
+        let gs: Vec<String> = groups
+            .iter()
+            .filter(|g| g.members.contains(&h.name))
+            .map(|g| g.name.clone())
+            .collect();
         memberships.insert(h.name.clone(), gs);
     }
-    Accounts { all_users: users, all_groups: groups, humans, memberships }
+    Accounts {
+        all_users: users,
+        all_groups: groups,
+        humans,
+        memberships,
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -132,7 +147,9 @@ pub struct SystemSettings {
 
 pub fn scan_system(root: &Path) -> SystemSettings {
     let mut s = SystemSettings {
-        hostname: read_opt(root.join("etc/hostname")).map(|h| h.trim().to_string()).filter(|h| !h.is_empty()),
+        hostname: read_opt(root.join("etc/hostname"))
+            .map(|h| h.trim().to_string())
+            .filter(|h| !h.is_empty()),
         ..Default::default()
     };
     if let Ok(t) = fs::read_link(root.join("etc/localtime")) {
@@ -151,13 +168,20 @@ pub fn scan_system(root: &Path) -> SystemSettings {
         s.keymap = parse_kv(&t).get("KEYMAP").cloned();
     }
     if s.keymap.is_none()
-        && let Some(t) = read_opt(root.join("etc/default/keyboard")) {
-            s.keymap = parse_kv(&t).get("XKBLAYOUT").cloned();
-        }
+        && let Some(t) = read_opt(root.join("etc/default/keyboard"))
+    {
+        s.keymap = parse_kv(&t).get("XKBLAYOUT").cloned();
+    }
     if root == Path::new("/") {
-        if let Some(out) =
-            try_run("systemctl", &["list-unit-files", "--state=enabled,disabled", "--no-legend", "--no-pager"])
-        {
+        if let Some(out) = try_run(
+            "systemctl",
+            &[
+                "list-unit-files",
+                "--state=enabled,disabled",
+                "--no-legend",
+                "--no-pager",
+            ],
+        ) {
             let (en, dis) = parse_unit_files(&out);
             s.enabled_units = en;
             s.disabled_units = dis;
@@ -228,15 +252,29 @@ pub fn scan_wrappers(accounts: &Accounts) -> Wrappers {
     if Path::new("/var/lib/flatpak").exists() || crate::util::have("flatpak") {
         let mut f = FlatpakState::default();
         if let Some(o) = try_run("flatpak", &["remotes", "--system", "--columns=name"]) {
-            f.system_remotes = o.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+            f.system_remotes = o
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
         }
-        if let Some(o) = try_run("flatpak", &["list", "--system", "--app", "--columns=application"]) {
-            f.system_apps = o.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+        if let Some(o) = try_run(
+            "flatpak",
+            &["list", "--system", "--app", "--columns=application"],
+        ) {
+            f.system_apps = o
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
         }
         for h in &accounts.humans {
             let dir = Path::new(&h.home).join(".local/share/flatpak/app");
             if let Ok(rd) = fs::read_dir(&dir) {
-                let apps: Vec<String> = rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+                let apps: Vec<String> = rd
+                    .flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect();
                 if !apps.is_empty() {
                     f.user_apps.insert(h.name.clone(), apps);
                 }
@@ -245,18 +283,29 @@ pub fn scan_wrappers(accounts: &Accounts) -> Wrappers {
         w.flatpak = Some(f);
     }
 
-    for prefix in ["/home/linuxbrew/.linuxbrew", "/var/home/linuxbrew/.linuxbrew"] {
+    for prefix in [
+        "/home/linuxbrew/.linuxbrew",
+        "/var/home/linuxbrew/.linuxbrew",
+    ] {
         let p = Path::new(prefix);
         if p.join("bin/brew").exists() {
             let cellar = |d: &str| -> Vec<String> {
                 fs::read_dir(p.join(d))
-                    .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|e| e.file_name().to_string_lossy().into_owned())
+                            .collect()
+                    })
                     .unwrap_or_default()
             };
             let owner = std::os::unix::fs::MetadataExt::uid(&fs::metadata(p).unwrap());
             w.homebrew = Some(BrewState {
                 prefix: prefix.into(),
-                owner: accounts.all_users.iter().find(|u| u.uid == owner).map(|u| u.name.clone()),
+                owner: accounts
+                    .all_users
+                    .iter()
+                    .find(|u| u.uid == owner)
+                    .map(|u| u.name.clone()),
                 formulae: cellar("Cellar"),
                 casks: cellar("Caskroom"),
             });
@@ -279,15 +328,17 @@ pub fn scan_wrappers(accounts: &Accounts) -> Wrappers {
 
     for h in &accounts.humans {
         let mut names = vec![];
-        let containers = Path::new(&h.home).join(".local/share/containers/storage/overlay-containers/containers.json");
+        let containers = Path::new(&h.home)
+            .join(".local/share/containers/storage/overlay-containers/containers.json");
         if let Some(t) = read_opt(&containers)
-            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
-                for c in v.as_array().into_iter().flatten() {
-                    if let Some(n) = c.pointer("/names/0").and_then(|x| x.as_str()) {
-                        names.push(n.to_string());
-                    }
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&t)
+        {
+            for c in v.as_array().into_iter().flatten() {
+                if let Some(n) = c.pointer("/names/0").and_then(|x| x.as_str()) {
+                    names.push(n.to_string());
                 }
             }
+        }
         if !names.is_empty() {
             w.containers.insert(h.name.clone(), names);
         }
@@ -296,9 +347,17 @@ pub fn scan_wrappers(accounts: &Accounts) -> Wrappers {
 }
 
 fn is_snap_infrastructure(n: &str) -> bool {
-    n == "snapd" || n == "bare" || n.starts_with("core") || n.starts_with("gnome-") && n.contains("-2")
-        || n.starts_with("gtk-common-themes") || n.starts_with("mesa-") || n.starts_with("kf5-") || n.starts_with("kf6-")
-        || n == "snapd-desktop-integration" || n == "firmware-updater" || n == "desktop-security-center"
+    n == "snapd"
+        || n == "bare"
+        || n.starts_with("core")
+        || n.starts_with("gnome-") && n.contains("-2")
+        || n.starts_with("gtk-common-themes")
+        || n.starts_with("mesa-")
+        || n.starts_with("kf5-")
+        || n.starts_with("kf6-")
+        || n == "snapd-desktop-integration"
+        || n == "firmware-updater"
+        || n == "desktop-security-center"
         || n == "prompting-client"
 }
 
@@ -384,7 +443,11 @@ mod tests {
              nobody:x:65534:65534::/:/sbin/nologin\nsvc:x:990:990::/:/sbin/nologin\n",
         )
         .unwrap();
-        fs::write(dir.join("etc/group"), "wheel:x:10:alice\nsudo:x:27:\nalice:x:1000:\n").unwrap();
+        fs::write(
+            dir.join("etc/group"),
+            "wheel:x:10:alice\nsudo:x:27:\nalice:x:1000:\n",
+        )
+        .unwrap();
         let a = scan_accounts(&dir);
         assert_eq!(a.humans.len(), 1);
         assert_eq!(a.memberships["alice"], vec!["wheel"]);

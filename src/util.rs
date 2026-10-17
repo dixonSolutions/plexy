@@ -1,6 +1,6 @@
 //! Small process / filesystem helpers shared by every module.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
@@ -119,6 +119,40 @@ pub fn have(prog: &str) -> bool {
     std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).any(|d| d.join(prog).is_file()))
         .unwrap_or(false)
+}
+
+/// Make sure the given commands exist, installing their packages with the
+/// system package manager when they are missing. `pairs` = (command, package).
+pub fn ensure_tools(pairs: &[(&str, &str)]) -> Result<()> {
+    let missing: Vec<&str> = pairs
+        .iter()
+        .filter(|(c, _)| {
+            !have(c)
+                && !Path::new("/usr/sbin").join(c).exists()
+                && !Path::new("/sbin").join(c).exists()
+        })
+        .map(|(_, p)| *p)
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    info(format!("installing required tools: {}", missing.join(" ")));
+    if have("dnf5") || have("dnf") {
+        let dnf = if have("dnf5") { "dnf5" } else { "dnf" };
+        let mut a = vec!["install", "-y"];
+        a.extend(missing.iter().copied());
+        run_visible(dnf, &a)
+    } else if have("apt-get") {
+        let _ = run_visible("apt-get", &["update", "-q"]);
+        let mut a = vec!["install", "-y", "-q"];
+        a.extend(missing.iter().copied());
+        run_visible("apt-get", &a)
+    } else {
+        bail!(
+            "missing tools ({}) and no supported package manager to install them",
+            missing.join(" ")
+        )
+    }
 }
 
 pub fn read_opt(p: impl AsRef<Path>) -> Option<String> {

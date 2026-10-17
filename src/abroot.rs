@@ -20,12 +20,12 @@
 //! three-way /etc merge preserves them across upgrades. The old system is not
 //! modified, so it remains bootable from the firmware menu as a fallback.
 
-use crate::apply::{self, merge_accounts, translate_fstab, FIRSTBOOT_UNIT, FIRSTLOGIN_UNIT};
+use crate::apply::{self, FIRSTBOOT_UNIT, FIRSTLOGIN_UNIT, merge_accounts, translate_fstab};
 use crate::manifest::Manifest;
-use crate::plan::{etc_translate, ConfigAction, Dest, Plan};
+use crate::plan::{ConfigAction, Dest, Plan, etc_translate};
 use crate::state::{parse_group, parse_passwd};
 use crate::util::{self, info, read_opt, root_join, run, step, try_run, write_file};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -95,7 +95,12 @@ pub struct Layout {
 }
 
 fn part_dev(disk: &str, n: u32) -> String {
-    if disk.chars().last().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if disk
+        .chars()
+        .last()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false)
+    {
         format!("{disk}p{n}")
     } else {
         format!("{disk}{n}")
@@ -110,9 +115,10 @@ fn free_regions(disk: &str) -> Vec<(u64, u64)> {
         let f: Vec<&str> = l.split_whitespace().collect();
         // Start End Sectors Size
         if f.len() >= 4
-            && let (Ok(start), Ok(bytes)) = (f[0].parse::<u64>(), f[3].parse::<u64>()) {
-                v.push((start * 512 / 1048576, bytes / 1048576));
-            }
+            && let (Ok(start), Ok(bytes)) = (f[0].parse::<u64>(), f[3].parse::<u64>())
+        {
+            v.push((start * 512 / 1048576, bytes / 1048576));
+        }
     }
     v
 }
@@ -142,7 +148,9 @@ pub fn partition(spec: &str) -> Result<Layout> {
         // Refuse to wipe a disk that holds mounted filesystems.
         let mounted = try_run("lsblk", &["-n", "-o", "MOUNTPOINTS", &disk]).unwrap_or_default();
         if mounted.lines().any(|l| !l.trim().is_empty()) {
-            bail!("{disk} has mounted filesystems; give a dedicated disk, or free:{disk} to use its free space");
+            bail!(
+                "{disk} has mounted filesystems; give a dedicated disk, or free:{disk} to use its free space"
+            );
         }
         let size = try_run("blockdev", &["--getsize64", &disk])
             .and_then(|s| s.trim().parse::<u64>().ok())
@@ -151,17 +159,31 @@ pub fn partition(spec: &str) -> Result<Layout> {
         if size < need {
             bail!("{disk} is {size} MiB; ABRoot volumes plus your data need about {need} MiB");
         }
-        step(format!("partitioning {disk} for ABRoot (vos-boot, vos-root LVM, vos-var)"));
+        step(format!(
+            "partitioning {disk} for ABRoot (vos-boot, vos-root LVM, vos-var)"
+        ));
         let script = format!(
             "label: gpt\n,{BOOT_MIB}MiB,L,name=vos-boot\n,{ROOT_PV_MIB}MiB,E6D6D379-F507-44C2-A23C-238F2A3DF928,name=vos-root\n,,L,name=vos-var\n"
         );
         if !util::dry_run() {
-            util::run_stdin("sfdisk", &["--wipe", "always", "--wipe-partitions", "always", &disk], &script)?;
+            util::run_stdin(
+                "sfdisk",
+                &["--wipe", "always", "--wipe-partitions", "always", &disk],
+                &script,
+            )?;
         }
         let _ = try_run("udevadm", &["settle"]);
-        return Ok(Layout { boot: part_dev(&disk, 1), pv: part_dev(&disk, 2), var: part_dev(&disk, 3), disk });
+        return Ok(Layout {
+            boot: part_dev(&disk, 1),
+            pv: part_dev(&disk, 2),
+            var: part_dev(&disk, 3),
+            disk,
+        });
     }
-    let biggest = free_regions(&disk).into_iter().max_by_key(|r| r.1).unwrap_or((0, 0));
+    let biggest = free_regions(&disk)
+        .into_iter()
+        .max_by_key(|r| r.1)
+        .unwrap_or((0, 0));
     if biggest.1 < need {
         bail!(
             "largest free region on {disk} is {} MiB; ABRoot volumes plus your data need about {need} MiB. \
@@ -170,7 +192,9 @@ pub fn partition(spec: &str) -> Result<Layout> {
         );
     }
     let before: Vec<String> = list_parts(&disk);
-    step(format!("creating ABRoot partitions in free space on {disk}"));
+    step(format!(
+        "creating ABRoot partitions in free space on {disk}"
+    ));
     let script = format!(
         ",{BOOT_MIB}MiB,L,name=vos-boot\n,{ROOT_PV_MIB}MiB,E6D6D379-F507-44C2-A23C-238F2A3DF928,name=vos-root\n,{need_var}MiB,L,name=vos-var\n"
     );
@@ -179,11 +203,19 @@ pub fn partition(spec: &str) -> Result<Layout> {
         let _ = try_run("partx", &["-a", &disk]);
         let _ = try_run("udevadm", &["settle"]);
     }
-    let new: Vec<String> = list_parts(&disk).into_iter().filter(|p| !before.contains(p)).collect();
+    let new: Vec<String> = list_parts(&disk)
+        .into_iter()
+        .filter(|p| !before.contains(p))
+        .collect();
     if new.len() != 3 {
         bail!("expected 3 new partitions on {disk}, found {:?}", new);
     }
-    Ok(Layout { disk, boot: new[0].clone(), pv: new[1].clone(), var: new[2].clone() })
+    Ok(Layout {
+        disk,
+        boot: new[0].clone(),
+        pv: new[1].clone(),
+        var: new[2].clone(),
+    })
 }
 
 fn list_parts(disk: &str) -> Vec<String> {
@@ -203,19 +235,52 @@ fn mkfs_and_lvm(l: &Layout) -> Result<()> {
     r("pvcreate", &["-ff", "-y", &l.pv])?;
     r("vgcreate", &["vos-root", &l.pv])?;
     r("lvcreate", &["-y", "-L", "1G", "-n", "init", "vos-root"])?;
-    r("mkfs.ext4", &["-q", "-F", "-L", "vos-init", "/dev/vos-root/init"])?;
-    r("lvcreate", &["-y", "-l", "90%FREE", "-n", "root", "vos-root"])?;
-    r("lvcreate", &["-y", "-L", "512M", "-n", "root-meta", "vos-root"])?;
-    r("lvconvert", &["-y", "--type", "thin-pool", "--poolmetadata", "vos-root/root-meta", "vos-root/root"])?;
-    r("lvcreate", &["-y", "-V", "19G", "-T", "vos-root/root", "-n", "root-a"])?;
-    r("lvcreate", &["-y", "-V", "19G", "-T", "vos-root/root", "-n", "root-b"])?;
-    r("mkfs.btrfs", &["-q", "-f", "-L", "vos-a", "/dev/vos-root/root-a"])?;
-    r("mkfs.btrfs", &["-q", "-f", "-L", "vos-b", "/dev/vos-root/root-b"])?;
+    r(
+        "mkfs.ext4",
+        &["-q", "-F", "-L", "vos-init", "/dev/vos-root/init"],
+    )?;
+    r(
+        "lvcreate",
+        &["-y", "-l", "90%FREE", "-n", "root", "vos-root"],
+    )?;
+    r(
+        "lvcreate",
+        &["-y", "-L", "512M", "-n", "root-meta", "vos-root"],
+    )?;
+    r(
+        "lvconvert",
+        &[
+            "-y",
+            "--type",
+            "thin-pool",
+            "--poolmetadata",
+            "vos-root/root-meta",
+            "vos-root/root",
+        ],
+    )?;
+    r(
+        "lvcreate",
+        &["-y", "-V", "19G", "-T", "vos-root/root", "-n", "root-a"],
+    )?;
+    r(
+        "lvcreate",
+        &["-y", "-V", "19G", "-T", "vos-root/root", "-n", "root-b"],
+    )?;
+    r(
+        "mkfs.btrfs",
+        &["-q", "-f", "-L", "vos-a", "/dev/vos-root/root-a"],
+    )?;
+    r(
+        "mkfs.btrfs",
+        &["-q", "-f", "-L", "vos-b", "/dev/vos-root/root-b"],
+    )?;
     Ok(())
 }
 
 fn uuid(dev: &str) -> Result<String> {
-    Ok(run("blkid", &["-s", "UUID", "-o", "value", dev])?.trim().to_string())
+    Ok(run("blkid", &["-s", "UUID", "-o", "value", dev])?
+        .trim()
+        .to_string())
 }
 
 fn mount(src: &str, dst: &Path, opts: &[&str]) -> Result<()> {
@@ -227,14 +292,20 @@ fn mount(src: &str, dst: &Path, opts: &[&str]) -> Result<()> {
 }
 
 fn chroot(root: &Path, cmd: &str) -> Result<()> {
-    util::run_visible("chroot", &[root.display().to_string().as_str(), "/bin/sh", "-c", cmd])
+    util::run_visible(
+        "chroot",
+        &[root.display().to_string().as_str(), "/bin/sh", "-c", cmd],
+    )
 }
 
 /// Image digest ABRoot compares against the registry to decide on upgrades.
 fn upstream_digest(image: &str) -> String {
-    try_run("podman", &["image", "inspect", "--format", "{{.Digest}}", image])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+    try_run(
+        "podman",
+        &["image", "inspect", "--format", "{{.Digest}}", image],
+    )
+    .map(|s| s.trim().to_string())
+    .unwrap_or_default()
 }
 
 fn derived_built(plan: &Plan) -> bool {
@@ -242,10 +313,15 @@ fn derived_built(plan: &Plan) -> bool {
 }
 
 fn disk_and_partnum(part: &str) -> Result<(String, String)> {
-    let pk = run("lsblk", &["-n", "-o", "PKNAME", part])?.trim().to_string();
-    let num = fs::read_to_string(format!("/sys/class/block/{}/partition", part.trim_start_matches("/dev/")))?
+    let pk = run("lsblk", &["-n", "-o", "PKNAME", part])?
         .trim()
         .to_string();
+    let num = fs::read_to_string(format!(
+        "/sys/class/block/{}/partition",
+        part.trim_start_matches("/dev/")
+    ))?
+    .trim()
+    .to_string();
     Ok((format!("/dev/{pk}"), num))
 }
 
@@ -256,19 +332,30 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     if !m.boot.uefi {
         bail!("ABRoot targets require UEFI boot");
     }
-    for t in ["sfdisk", "pvcreate", "mkfs.btrfs", "mkfs.ext4", "efibootmgr", "podman"] {
-        if !util::have(t) && !Path::new("/usr/sbin").join(t).exists() {
-            bail!("{t} is required for the ABRoot backend (install lvm2, btrfs-progs, efibootmgr, podman)");
-        }
-    }
+    util::ensure_tools(&[
+        ("sfdisk", "fdisk"),
+        ("pvcreate", "lvm2"),
+        ("mkfs.btrfs", "btrfs-progs"),
+        ("mkfs.ext4", "e2fsprogs"),
+        ("efibootmgr", "efibootmgr"),
+        ("podman", "podman"),
+    ])?;
     let Some(spec) = disk else {
         bail!(
             "ABRoot needs its own volumes: pass --abroot-disk /dev/sdX (a dedicated disk, wiped) or \
              --abroot-disk free:/dev/sdX (unpartitioned space). The current system is left untouched"
         );
     };
-    let esp = m.boot.esp.clone().context("no EFI system partition mounted at /boot/efi")?;
-    let image = if derived_built(plan) { plan.derived_image.clone() } else { plan.target_image.clone() };
+    let esp = m
+        .boot
+        .esp
+        .clone()
+        .context("no EFI system partition mounted at /boot/efi")?;
+    let image = if derived_built(plan) {
+        plan.derived_image.clone()
+    } else {
+        plan.target_image.clone()
+    };
     crate::target::pull(&image)?;
 
     let layout = partition(spec)?;
@@ -300,7 +387,10 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     std::os::unix::fs::symlink("run/media", &media)?;
     for d in ["home", "mnt", "root", "srv", "opt"] {
         let p = a.join(d);
-        if fs::symlink_metadata(&p).map(|m| !m.file_type().is_symlink()).unwrap_or(true) {
+        if fs::symlink_metadata(&p)
+            .map(|m| !m.file_type().is_symlink())
+            .unwrap_or(true)
+        {
             let _ = fs::remove_dir_all(&p);
             fs::create_dir_all(a.join("var").join(d))?;
             std::os::unix::fs::symlink(format!("var/{d}"), &p)?;
@@ -331,7 +421,8 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     // ABRoot settings: thin provisioning on; layered packages recorded so
     // `abroot upgrade` keeps installing them.
     let base_cfg = read_opt(a.join("usr/share/abroot/abroot.json")).unwrap_or_else(|| "{}".into());
-    let mut cfg: serde_json::Value = serde_json::from_str(&base_cfg).unwrap_or(serde_json::json!({}));
+    let mut cfg: serde_json::Value =
+        serde_json::from_str(&base_cfg).unwrap_or(serde_json::json!({}));
     cfg["thinProvisioning"] = serde_json::json!(true);
     cfg["thinInitVolume"] = serde_json::json!("vos-init");
     let cfg_s = serde_json::to_string_pretty(&cfg)?;
@@ -339,7 +430,10 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     write_file(&a.join("usr/share/abroot/abroot.json"), &cfg_s)?;
     let layered = plan.names_for(Dest::Image);
     if !layered.is_empty() {
-        write_file(&a.join("etc/abroot/packages.add"), layered.join("\n") + "\n")?;
+        write_file(
+            &a.join("etc/abroot/packages.add"),
+            layered.join("\n") + "\n",
+        )?;
     }
 
     // fstab: ABRoot rewrites the / line on boot; /boot and the ESP are ours.
@@ -384,15 +478,27 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         write_file(&path, c)?;
         fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
     }
-    if let Some(g) = parse_group(&r("/etc/group")).into_iter().find(|g| g.name == "shadow") {
+    if let Some(g) = parse_group(&r("/etc/group"))
+        .into_iter()
+        .find(|g| g.name == "shadow")
+    {
         for p in ["/etc/shadow", "/etc/gshadow"] {
             let _ = std::os::unix::fs::chown(root_join(&a, p), Some(0), Some(g.gid));
         }
     }
     let mut n = 0;
-    for c in plan.configs.iter().filter(|c| matches!(c.action, ConfigAction::Etc | ConfigAction::Brew)) {
-        let dst = root_join(&a, etc_translate(&c.path, plan.source_family, plan.target_family));
-        if fs::symlink_metadata(&c.path).is_ok() && apply::copy_preserving(Path::new(&c.path), &dst).is_ok() {
+    for c in plan
+        .configs
+        .iter()
+        .filter(|c| matches!(c.action, ConfigAction::Etc | ConfigAction::Brew))
+    {
+        let dst = root_join(
+            &a,
+            etc_translate(&c.path, plan.source_family, plan.target_family),
+        );
+        if fs::symlink_metadata(&c.path).is_ok()
+            && apply::copy_preserving(Path::new(&c.path), &dst).is_ok()
+        {
             n += 1;
         }
     }
@@ -417,7 +523,12 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     info(format!("  {en} services enabled as on the old system"));
 
     step("installing the boot chain (initramfs, GRUB, EFI entry)");
-    for (src, dst) in [("/dev", "dev"), ("/proc", "proc"), ("/sys", "sys"), ("/run", "run")] {
+    for (src, dst) in [
+        ("/dev", "dev"),
+        ("/proc", "proc"),
+        ("/sys", "sys"),
+        ("/run", "run"),
+    ] {
         mount(src, &a.join(dst), &["--rbind"])?;
     }
     mount("/dev/vos-root/init", &a.join("boot/init"), &[])?;
@@ -428,10 +539,17 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .max()
         .context("no kernel in the image")?;
-    chroot(&a, "lpkg --unlock >/dev/null 2>&1; update-initramfs -c -k all; lpkg --lock >/dev/null 2>&1; true")?;
+    chroot(
+        &a,
+        "lpkg --unlock >/dev/null 2>&1; update-initramfs -c -k all; lpkg --lock >/dev/null 2>&1; true",
+    )?;
     for e in fs::read_dir(a.join("boot"))?.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        if ["vmlinuz", "initrd.img", "config-", "System.map"].iter().any(|p| name.starts_with(p)) && e.path().is_file() {
+        if ["vmlinuz", "initrd.img", "config-", "System.map"]
+            .iter()
+            .any(|p| name.starts_with(p))
+            && e.path().is_file()
+        {
             fs::rename(e.path(), a.join("boot/init/vos-a").join(&name))?;
         }
     }
@@ -440,7 +558,10 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     if !vmlinuz.exists() && from_mod.exists() {
         fs::copy(&from_mod, &vmlinuz)?;
     }
-    if !a.join(format!("boot/init/vos-a/initrd.img-{kver}")).exists() {
+    if !a
+        .join(format!("boot/init/vos-a/initrd.img-{kver}"))
+        .exists()
+    {
         bail!("initramfs for {kver} was not generated");
     }
     let mut kargs = read_opt(a.join("etc/abroot/kargs"))
@@ -451,7 +572,10 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
         kargs.push(' ');
         kargs.push_str(k);
     }
-    write_file(&a.join("boot/init/vos-a/abroot.cfg"), abroot_cfg(&kver, &uuid("/dev/vos-root/root-a")?, &kargs))?;
+    write_file(
+        &a.join("boot/init/vos-a/abroot.cfg"),
+        abroot_cfg(&kver, &uuid("/dev/vos-root/root-a")?, &kargs),
+    )?;
     chroot(
         &a,
         "grub-install --no-nvram --bootloader-id=vanilla --boot-directory=/boot --target=x86_64-efi \
@@ -466,7 +590,17 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     };
     util::run_visible(
         "efibootmgr",
-        &["--create", "--disk", &esp_disk, "--part", &esp_part, "--label", "Vanilla OS", "--loader", loader],
+        &[
+            "--create",
+            "--disk",
+            &esp_disk,
+            "--part",
+            &esp_part,
+            "--label",
+            "Vanilla OS",
+            "--loader",
+            loader,
+        ],
     )?;
 
     step("copying your data into vos-var (home, flatpaks, service state)");
@@ -476,8 +610,15 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     let uids = apply::id_remap(&m.accounts.all_users, &new_users);
     let gids = apply::gid_remap(&m.accounts.all_groups, &new_groups);
     if !uids.is_empty() || !gids.is_empty() {
-        let n = apply::chown_tree(&a.join("var"), &uids, &gids, &["lib/containers", "home", "lib/flatpak"]);
-        info(format!("  {n} files re-owned for system accounts whose ids differ"));
+        let n = apply::chown_tree(
+            &a.join("var"),
+            &uids,
+            &gids,
+            &["lib/containers", "home", "lib/flatpak"],
+        );
+        info(format!(
+            "  {n} files re-owned for system accounts whose ids differ"
+        ));
     }
 
     // Plexy itself, for the first-boot/first-login stages.
@@ -485,15 +626,42 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     fs::create_dir_all(bin.parent().unwrap())?;
     fs::copy(std::env::current_exe()?, &bin)?;
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o755))?;
-    write_file(&a.join("etc/systemd/system/plexy-firstboot.service"), FIRSTBOOT_UNIT)?;
-    write_file(&a.join("etc/systemd/user/plexy-firstlogin.service"), FIRSTLOGIN_UNIT)?;
-    let _ = try_run("systemctl", &["--root", &dstr, "enable", "plexy-firstboot.service"]);
-    let _ = try_run("systemctl", &["--root", &dstr, "--global", "enable", "plexy-firstlogin.service"]);
-    write_file(&a.join("var/lib/plexy/plan.json"), serde_json::to_string_pretty(plan)?)?;
+    write_file(
+        &a.join("etc/systemd/system/plexy-firstboot.service"),
+        FIRSTBOOT_UNIT,
+    )?;
+    write_file(
+        &a.join("etc/systemd/user/plexy-firstlogin.service"),
+        FIRSTLOGIN_UNIT,
+    )?;
+    let _ = try_run(
+        "systemctl",
+        &["--root", &dstr, "enable", "plexy-firstboot.service"],
+    );
+    let _ = try_run(
+        "systemctl",
+        &[
+            "--root",
+            &dstr,
+            "--global",
+            "enable",
+            "plexy-firstlogin.service",
+        ],
+    );
+    write_file(
+        &a.join("var/lib/plexy/plan.json"),
+        serde_json::to_string_pretty(plan)?,
+    )?;
     let tb = Path::new("/var/lib/plexy/staging/toolbox.tar");
     if tb.exists() {
         fs::create_dir_all(a.join("var/lib/plexy/staging"))?;
-        run("cp", &[tb.display().to_string().as_str(), &a.join("var/lib/plexy/staging/").display().to_string()])?;
+        run(
+            "cp",
+            &[
+                tb.display().to_string().as_str(),
+                &a.join("var/lib/plexy/staging/").display().to_string(),
+            ],
+        )?;
     }
 
     step("unmounting");
@@ -501,7 +669,9 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     let _ = run("umount", &["-R", &a.display().to_string()]);
     let _ = run("vgchange", &["-an", "vos-root"]);
     println!("\n  Vanilla OS is installed on ABRoot volumes and is now the first boot entry.");
-    println!("  Your previous system is untouched and stays available in the firmware boot menu.\n");
+    println!(
+        "  Your previous system is untouched and stays available in the firmware boot menu.\n"
+    );
     if reboot {
         run("systemctl", &["reboot"])?;
     }
@@ -512,7 +682,15 @@ fn copy_data(a: &Path) -> Result<()> {
     let var = a.join("var");
     let cp = |src: &Path, dst_dir: &Path| -> Result<()> {
         fs::create_dir_all(dst_dir)?;
-        util::run_visible("cp", &["-a", "--reflink=auto", &src.display().to_string(), &dst_dir.display().to_string()])
+        util::run_visible(
+            "cp",
+            &[
+                "-a",
+                "--reflink=auto",
+                &src.display().to_string(),
+                &dst_dir.display().to_string(),
+            ],
+        )
     };
     for (old, new) in [("/home", "home"), ("/root", "root")] {
         if let Ok(rd) = fs::read_dir(old) {
@@ -540,7 +718,15 @@ fn copy_data(a: &Path) -> Result<()> {
     }
     if Path::new("/usr/local").is_dir() {
         fs::create_dir_all(var.join("usrlocal"))?;
-        let _ = run("cp", &["-a", "--reflink=auto", "/usr/local/.", &var.join("usrlocal").display().to_string()]);
+        let _ = run(
+            "cp",
+            &[
+                "-a",
+                "--reflink=auto",
+                "/usr/local/.",
+                &var.join("usrlocal").display().to_string(),
+            ],
+        );
     }
     Ok(())
 }
@@ -565,7 +751,10 @@ mod tests {
 
     #[test]
     fn boot_menu_has_both_states() {
-        assert!(BOOT_GRUB_CFG.contains("--class abroot-a") && BOOT_GRUB_CFG.contains("--class abroot-b"));
+        assert!(
+            BOOT_GRUB_CFG.contains("--class abroot-a")
+                && BOOT_GRUB_CFG.contains("--class abroot-b")
+        );
         assert!(BOOT_GRUB_CFG.contains("Current State (A)"));
     }
 }

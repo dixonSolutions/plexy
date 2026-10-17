@@ -17,14 +17,16 @@ pub enum Family {
 
 impl Family {
     pub fn from_os_release(id: &str, id_like: &str) -> Family {
-        let words: Vec<&str> = std::iter::once(id).chain(id_like.split_whitespace()).collect();
+        let words: Vec<&str> = std::iter::once(id)
+            .chain(id_like.split_whitespace())
+            .collect();
         for w in &words {
             match *w {
                 "fedora" | "rhel" | "centos" | "ultramarine" | "nobara" | "almalinux" | "rocky" => {
-                    return Family::Fedora
+                    return Family::Fedora;
                 }
                 "debian" | "ubuntu" | "vanilla" | "linuxmint" | "pop" | "elementary" => {
-                    return Family::Debian
+                    return Family::Debian;
                 }
                 _ => {}
             }
@@ -100,7 +102,11 @@ pub fn detect_os(root: &Path) -> OsInfo {
     let g = |k: &str| kv.get(k).cloned().unwrap_or_default();
     let family = Family::from_os_release(&g("ID"), &g("ID_LIKE"));
     let image_based = Path::new("/run/ostree-booted").exists() && root == Path::new("/");
-    let booted_image = if image_based { booted_image_ref() } else { None };
+    let booted_image = if image_based {
+        booted_image_ref()
+    } else {
+        None
+    };
     let pkg_manager = if image_based {
         PkgManager::RpmOstree
     } else if util::have("dnf5") || Path::new("/usr/bin/dnf5").exists() {
@@ -138,10 +144,32 @@ fn booted_image_ref() -> Option<String> {
 /// Kernel arguments that are distro/installation specific and must NOT be
 /// carried into the new deployment (bootc computes its own root= etc).
 const KARG_DROP_PREFIXES: &[&str] = &[
-    "BOOT_IMAGE=", "root=", "rootflags=", "rootfstype=", "ro", "rw", "initrd=", "ostree=",
-    "rd.lvm.lv=", "resume=", "rhgb", "quiet", "splash", "vt.handoff=", "rd.luks.uuid=",
-    "rd.luks.name=", "cryptdevice=", "systemd.unit=", "console=", "no_timer_check",
-    "net.ifnames=", "biosdevname=", "earlyprintk=", "$vt_handoff", "boot=", "crashkernel=",
+    "BOOT_IMAGE=",
+    "root=",
+    "rootflags=",
+    "rootfstype=",
+    "ro",
+    "rw",
+    "initrd=",
+    "ostree=",
+    "rd.lvm.lv=",
+    "resume=",
+    "rhgb",
+    "quiet",
+    "splash",
+    "vt.handoff=",
+    "rd.luks.uuid=",
+    "rd.luks.name=",
+    "cryptdevice=",
+    "systemd.unit=",
+    "console=",
+    "no_timer_check",
+    "net.ifnames=",
+    "biosdevname=",
+    "earlyprintk=",
+    "$vt_handoff",
+    "boot=",
+    "crashkernel=",
 ];
 
 pub fn filter_kargs(cmdline: &str) -> Vec<String> {
@@ -201,19 +229,27 @@ pub fn parse_findmnt_json(js: &str) -> Vec<Mount> {
 
 /// Mount points under which user data lives and that are separate filesystems
 /// (or btrfs subvolumes) from /. These are re-mounted under /var after migration.
-const DATA_MOUNT_POINTS: &[&str] = &["/home", "/var", "/srv", "/opt", "/var/lib", "/var/log", "/root"];
+const DATA_MOUNT_POINTS: &[&str] = &[
+    "/home", "/var", "/srv", "/opt", "/var/lib", "/var/log", "/root",
+];
 
 pub fn detect_boot() -> BootInfo {
     let mut b = BootInfo {
         uefi: Path::new("/sys/firmware/efi").exists(),
-        kernel: try_run("uname", &["-r"]).unwrap_or_default().trim().to_string(),
+        kernel: try_run("uname", &["-r"])
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
         ..Default::default()
     };
     let cmdline = read_opt("/proc/cmdline").unwrap_or_default();
     b.kargs = filter_kargs(&cmdline);
-    let mounts = try_run("findmnt", &["-J", "-o", "TARGET,SOURCE,FSTYPE,OPTIONS,UUID"])
-        .map(|j| parse_findmnt_json(&j))
-        .unwrap_or_default();
+    let mounts = try_run(
+        "findmnt",
+        &["-J", "-o", "TARGET,SOURCE,FSTYPE,OPTIONS,UUID"],
+    )
+    .map(|j| parse_findmnt_json(&j))
+    .unwrap_or_default();
     for m in &mounts {
         match m.target.as_str() {
             "/" => {
@@ -250,9 +286,15 @@ mod tests {
 
     #[test]
     fn family_detection() {
-        assert_eq!(Family::from_os_release("ultramarine", "fedora"), Family::Fedora);
+        assert_eq!(
+            Family::from_os_release("ultramarine", "fedora"),
+            Family::Fedora
+        );
         assert_eq!(Family::from_os_release("ubuntu", "debian"), Family::Debian);
-        assert_eq!(Family::from_os_release("linuxmint", "ubuntu debian"), Family::Debian);
+        assert_eq!(
+            Family::from_os_release("linuxmint", "ubuntu debian"),
+            Family::Debian
+        );
         assert_eq!(Family::from_os_release("bluefin", "fedora"), Family::Fedora);
         assert_eq!(Family::from_os_release("arch", ""), Family::Other);
     }

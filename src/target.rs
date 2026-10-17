@@ -9,7 +9,7 @@
 use crate::desktop::{self, DesktopInfo};
 use crate::os::Family;
 use crate::util::{self, debug, info, run, try_run};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -31,30 +31,78 @@ pub struct CatalogEntry {
 }
 
 pub const CATALOG: &[CatalogEntry] = &[
-    CatalogEntry { id: "bluefin", image: "ghcr.io/ublue-os/bluefin:stable", backend: Backend::Bootc,
-        summary: "Universal Blue Bluefin (GNOME), Homebrew + distrobox preinstalled" },
-    CatalogEntry { id: "bluefin-dx", image: "ghcr.io/ublue-os/bluefin-dx:stable", backend: Backend::Bootc,
-        summary: "Bluefin developer edition (GNOME, containers/VMs tooling)" },
-    CatalogEntry { id: "bluefin-nvidia", image: "ghcr.io/ublue-os/bluefin-nvidia-open:stable", backend: Backend::Bootc,
-        summary: "Bluefin with NVIDIA open kernel modules" },
-    CatalogEntry { id: "aurora", image: "ghcr.io/ublue-os/aurora:stable", backend: Backend::Bootc,
-        summary: "Universal Blue Aurora (KDE Plasma)" },
-    CatalogEntry { id: "aurora-nvidia", image: "ghcr.io/ublue-os/aurora-nvidia-open:stable", backend: Backend::Bootc,
-        summary: "Aurora with NVIDIA open kernel modules" },
-    CatalogEntry { id: "bazzite", image: "ghcr.io/ublue-os/bazzite:stable", backend: Backend::Bootc,
-        summary: "Bazzite gaming (KDE Plasma)" },
-    CatalogEntry { id: "bazzite-gnome", image: "ghcr.io/ublue-os/bazzite-gnome:stable", backend: Backend::Bootc,
-        summary: "Bazzite gaming (GNOME)" },
-    CatalogEntry { id: "silverblue", image: "quay.io/fedora/fedora-silverblue:44", backend: Backend::Bootc,
-        summary: "Fedora Silverblue (GNOME)" },
-    CatalogEntry { id: "kinoite", image: "quay.io/fedora/fedora-kinoite:44", backend: Backend::Bootc,
-        summary: "Fedora Kinoite (KDE Plasma)" },
-    CatalogEntry { id: "cosmic-atomic", image: "quay.io/fedora-ostree-desktops/cosmic-atomic:44", backend: Backend::Bootc,
-        summary: "Fedora COSMIC Atomic" },
-    CatalogEntry { id: "fedora-bootc", image: "quay.io/fedora/fedora-bootc:44", backend: Backend::Bootc,
-        summary: "Fedora bootc base (headless servers)" },
-    CatalogEntry { id: "vanilla", image: "ghcr.io/vanilla-os/gnome:latest", backend: Backend::Abroot,
-        summary: "Vanilla OS (GNOME, Debian-based) on ABRoot A/B partitions" },
+    CatalogEntry {
+        id: "bluefin",
+        image: "ghcr.io/ublue-os/bluefin:stable",
+        backend: Backend::Bootc,
+        summary: "Universal Blue Bluefin (GNOME), Homebrew + distrobox preinstalled",
+    },
+    CatalogEntry {
+        id: "bluefin-dx",
+        image: "ghcr.io/ublue-os/bluefin-dx:stable",
+        backend: Backend::Bootc,
+        summary: "Bluefin developer edition (GNOME, containers/VMs tooling)",
+    },
+    CatalogEntry {
+        id: "bluefin-nvidia",
+        image: "ghcr.io/ublue-os/bluefin-nvidia-open:stable",
+        backend: Backend::Bootc,
+        summary: "Bluefin with NVIDIA open kernel modules",
+    },
+    CatalogEntry {
+        id: "aurora",
+        image: "ghcr.io/ublue-os/aurora:stable",
+        backend: Backend::Bootc,
+        summary: "Universal Blue Aurora (KDE Plasma)",
+    },
+    CatalogEntry {
+        id: "aurora-nvidia",
+        image: "ghcr.io/ublue-os/aurora-nvidia-open:stable",
+        backend: Backend::Bootc,
+        summary: "Aurora with NVIDIA open kernel modules",
+    },
+    CatalogEntry {
+        id: "bazzite",
+        image: "ghcr.io/ublue-os/bazzite:stable",
+        backend: Backend::Bootc,
+        summary: "Bazzite gaming (KDE Plasma)",
+    },
+    CatalogEntry {
+        id: "bazzite-gnome",
+        image: "ghcr.io/ublue-os/bazzite-gnome:stable",
+        backend: Backend::Bootc,
+        summary: "Bazzite gaming (GNOME)",
+    },
+    CatalogEntry {
+        id: "silverblue",
+        image: "quay.io/fedora/fedora-silverblue:44",
+        backend: Backend::Bootc,
+        summary: "Fedora Silverblue (GNOME)",
+    },
+    CatalogEntry {
+        id: "kinoite",
+        image: "quay.io/fedora/fedora-kinoite:44",
+        backend: Backend::Bootc,
+        summary: "Fedora Kinoite (KDE Plasma)",
+    },
+    CatalogEntry {
+        id: "cosmic-atomic",
+        image: "quay.io/fedora-ostree-desktops/cosmic-atomic:44",
+        backend: Backend::Bootc,
+        summary: "Fedora COSMIC Atomic",
+    },
+    CatalogEntry {
+        id: "fedora-bootc",
+        image: "quay.io/fedora/fedora-bootc:44",
+        backend: Backend::Bootc,
+        summary: "Fedora bootc base (headless servers)",
+    },
+    CatalogEntry {
+        id: "vanilla",
+        image: "ghcr.io/vanilla-os/gnome:latest",
+        backend: Backend::Abroot,
+        summary: "Vanilla OS (GNOME, Debian-based) on ABRoot A/B partitions",
+    },
 ];
 
 pub fn resolve(name_or_ref: &str) -> (String, Option<Backend>) {
@@ -126,13 +174,27 @@ pub fn inspect(image: &str) -> Result<ImageFacts> {
     info(format!("inspecting {image}"));
     let out = run(
         "podman",
-        &["run", "--rm", "--net=none", "--entrypoint", "/bin/sh", image, "-c", PROBE],
+        &[
+            "run",
+            "--rm",
+            "--net=none",
+            "--entrypoint",
+            "/bin/sh",
+            image,
+            "-c",
+            PROBE,
+        ],
     )
     .with_context(|| format!("probing {image}"))?;
-    let labels = try_run("podman", &["image", "inspect", "--format", "{{json .Labels}}", image]).unwrap_or_default();
+    let labels = try_run(
+        "podman",
+        &["image", "inspect", "--format", "{{json .Labels}}", image],
+    )
+    .unwrap_or_default();
     let mut f = parse_facts(&out);
     f.image = image.to_string();
-    f.bootc_label = labels.contains("\"containers.bootc\":\"1\"") || labels.contains("ostree.bootable");
+    f.bootc_label =
+        labels.contains("\"containers.bootc\":\"1\"") || labels.contains("ostree.bootable");
     f.backend = if f.bootc_label {
         Some(Backend::Bootc)
     } else if out.lines().any(|l| l == "abroot") {
@@ -177,7 +239,11 @@ pub fn parse_facts(out: &str) -> ImageFacts {
                 }
             }
             "dm" if !line.trim().is_empty() && dm.is_none() => {
-                dm = line.trim().rsplit('/').next().map(|x| x.trim_end_matches(".service").to_string());
+                dm = line
+                    .trim()
+                    .rsplit('/')
+                    .next()
+                    .map(|x| x.trim_end_matches(".service").to_string());
             }
             "passwd" => {
                 f.passwd.push_str(line);
@@ -202,9 +268,15 @@ pub fn parse_facts(out: &str) -> ImageFacts {
     f.os_id = kv.get("ID").cloned().unwrap_or_default();
     f.os_version = kv.get("VERSION_ID").cloned().unwrap_or_default();
     f.pretty_name = kv.get("PRETTY_NAME").cloned().unwrap_or_default();
-    f.family = Some(Family::from_os_release(&f.os_id, kv.get("ID_LIKE").map(String::as_str).unwrap_or("")));
+    f.family = Some(Family::from_os_release(
+        &f.os_id,
+        kv.get("ID_LIKE").map(String::as_str).unwrap_or(""),
+    ));
     // Re-use the desktop classifier on the session list we collected.
-    let mut d = DesktopInfo { display_manager: dm, ..Default::default() };
+    let mut d = DesktopInfo {
+        display_manager: dm,
+        ..Default::default()
+    };
     for s in &sessions {
         d.sessions.push(s.clone());
         if let Some(x) = desktop::Desktop::from_session(s) {
@@ -212,7 +284,9 @@ pub fn parse_facts(out: &str) -> ImageFacts {
         }
     }
     d.primary = match d.display_manager.as_deref() {
-        Some("gdm") if d.installed.contains(&desktop::Desktop::Gnome) => Some(desktop::Desktop::Gnome),
+        Some("gdm") if d.installed.contains(&desktop::Desktop::Gnome) => {
+            Some(desktop::Desktop::Gnome)
+        }
         Some("sddm") | Some("plasmalogin") if d.installed.contains(&desktop::Desktop::Kde) => {
             Some(desktop::Desktop::Kde)
         }
@@ -236,7 +310,10 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), CATALOG.len());
         assert_eq!(resolve("bluefin").0, "ghcr.io/ublue-os/bluefin:stable");
-        assert_eq!(resolve("quay.io/x/y:1"), ("quay.io/x/y:1".to_string(), None));
+        assert_eq!(
+            resolve("quay.io/x/y:1"),
+            ("quay.io/x/y:1".to_string(), None)
+        );
     }
 
     #[test]

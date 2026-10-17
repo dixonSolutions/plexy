@@ -8,10 +8,10 @@
 
 use crate::manifest::Manifest;
 use crate::os::Family;
-use crate::plan::{etc_translate, ConfigAction, Plan};
-use crate::state::{parse_group, parse_passwd, GroupEntry, PasswdEntry};
+use crate::plan::{ConfigAction, Plan, etc_translate};
+use crate::state::{GroupEntry, PasswdEntry, parse_group, parse_passwd};
 use crate::util::{self, info, root_join, run, step, try_run, warn, write_file};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -50,7 +50,9 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
         bail!("plexy apply must run as root");
     }
     if !util::have("podman") {
-        bail!("podman is required (install it with your package manager first: dnf install podman / apt install podman)");
+        bail!(
+            "podman is required (install it with your package manager first: dnf install podman / apt install podman)"
+        );
     }
     if m.os.image_based {
         bail!("this system is already image-based; use `plexy switch` instead");
@@ -64,7 +66,12 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
             let others: Vec<String> = rd
                 .flatten()
                 .map(|e| e.file_name().to_string_lossy().into_owned())
-                .filter(|n| matches!(n.as_str(), "Microsoft" | "Windows" | "refind" | "opensuse" | "arch"))
+                .filter(|n| {
+                    matches!(
+                        n.as_str(),
+                        "Microsoft" | "Windows" | "refind" | "opensuse" | "arch"
+                    )
+                })
                 .collect();
             if !others.is_empty() && !opts.allow_esp_wipe {
                 bail!(
@@ -76,7 +83,9 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
         }
     }
     if m.boot.root_on_luks && m.os.family == Family::Debian {
-        warn("root is on LUKS: Debian-family systems unlock it from crypttab in the initramfs; plexy adds rd.luks.uuid= so the new initramfs can unlock it");
+        warn(
+            "root is on LUKS: Debian-family systems unlock it from crypttab in the initramfs; plexy adds rd.luks.uuid= so the new initramfs can unlock it",
+        );
     }
     let free = try_run("df", &["--output=avail", "-B1", "/"])
         .and_then(|o| o.lines().nth(1).and_then(|l| l.trim().parse::<u64>().ok()))
@@ -88,20 +97,39 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
 }
 
 pub fn run_bootc_install(m: &Manifest, plan: &Plan, opts: &ApplyOpts) -> Result<()> {
-    step(format!("installing {} next to the running system (bootc install to-existing-root)", opts.image));
+    step(format!(
+        "installing {} next to the running system (bootc install to-existing-root)",
+        opts.image
+    ));
     let mut args: Vec<String> = vec![
-        "run", "--rm", "--privileged", "--pid=host", "--user=root:root",
-        "-v", "/dev:/dev", "-v", "/var/lib/containers:/var/lib/containers", "-v", "/:/target",
-        "--security-opt", "label=type:unconfined_t",
+        "run",
+        "--rm",
+        "--privileged",
+        "--pid=host",
+        "--user=root:root",
+        "-v",
+        "/dev:/dev",
+        "-v",
+        "/var/lib/containers:/var/lib/containers",
+        "-v",
+        "/:/target",
+        "--security-opt",
+        "label=type:unconfined_t",
     ]
     .into_iter()
     .map(String::from)
     .collect();
     args.push(opts.image.clone());
     args.extend(
-        ["bootc", "install", "to-existing-root", "--acknowledge-destructive", "--skip-fetch-check"]
-            .into_iter()
-            .map(String::from),
+        [
+            "bootc",
+            "install",
+            "to-existing-root",
+            "--acknowledge-destructive",
+            "--skip-fetch-check",
+        ]
+        .into_iter()
+        .map(String::from),
     );
     args.push(format!("--stateroot={}", opts.stateroot));
     args.push(format!("--target-imgref={}", opts.target_imgref));
@@ -112,10 +140,12 @@ pub fn run_bootc_install(m: &Manifest, plan: &Plan, opts: &ApplyOpts) -> Result<
         args.push(format!("--karg={k}"));
     }
     // Debian-family initramfs-tools unlock root via crypttab; dracut needs a karg.
-    if m.boot.root_on_luks && m.os.family == Family::Debian
-        && let Some(u) = luks_uuid_of_root(&m.boot.root_source) {
-            args.push(format!("--karg=rd.luks.uuid={u}"));
-        }
+    if m.boot.root_on_luks
+        && m.os.family == Family::Debian
+        && let Some(u) = luks_uuid_of_root(&m.boot.root_source)
+    {
+        args.push(format!("--karg=rd.luks.uuid={u}"));
+    }
     util::run_visible("podman", &args)
 }
 
@@ -125,7 +155,10 @@ fn luks_uuid_of_root(src: &str) -> Option<String> {
     while let Some(l) = lines.next() {
         if l.trim_start().starts_with("crypt") {
             // the device below the crypt mapping carries the LUKS UUID
-            return lines.next().and_then(|n| n.split_whitespace().nth(1)).map(str::to_string);
+            return lines
+                .next()
+                .and_then(|n| n.split_whitespace().nth(1))
+                .map(str::to_string);
         }
     }
     None
@@ -149,8 +182,14 @@ pub fn find_deployment(stateroot: &str) -> Result<(PathBuf, PathBuf)> {
 /// Translate an fstab mount target from a traditional layout to the
 /// image-based one (/home -> /var/home ...).
 pub fn translate_target(t: &str) -> Option<String> {
-    let map: &[(&str, &str)] = &[("/home", "/var/home"), ("/root", "/var/roothome"), ("/opt", "/var/opt"),
-        ("/srv", "/var/srv"), ("/usr/local", "/var/usrlocal"), ("/mnt", "/var/mnt")];
+    let map: &[(&str, &str)] = &[
+        ("/home", "/var/home"),
+        ("/root", "/var/roothome"),
+        ("/opt", "/var/opt"),
+        ("/srv", "/var/srv"),
+        ("/usr/local", "/var/usrlocal"),
+        ("/mnt", "/var/mnt"),
+    ];
     for (from, to) in map {
         if t == *from {
             return Some(to.to_string());
@@ -190,7 +229,9 @@ pub fn translate_fstab(old: &str) -> Vec<String> {
             out.push(nf.join(" "));
             continue;
         }
-        let Some(nt) = translate_target(tgt) else { continue };
+        let Some(nt) = translate_target(tgt) else {
+            continue;
+        };
         let mut nf: Vec<String> = f.iter().map(|s| s.to_string()).collect();
         nf[1] = nt;
         // the new root is read-only composefs: never fsck these at boot (pass 0)
@@ -206,13 +247,21 @@ fn plan_data_layout(m: &Manifest, stateroot_var: &Path) -> DataLayout {
     let old_fstab = util::read_opt("/etc/fstab").unwrap_or_default();
     let fstab = translate_fstab(&old_fstab);
     let var_mounted = m.boot.data_mounts.iter().any(|d| d.target == "/var")
-        && fstab.iter().any(|l| l.split_whitespace().nth(1) == Some("/var"));
+        && fstab
+            .iter()
+            .any(|l| l.split_whitespace().nth(1) == Some("/var"));
     let home_mounted = m.boot.data_mounts.iter().any(|d| d.target == "/home")
-        && fstab.iter().any(|l| l.split_whitespace().nth(1) == Some("/var/home"));
+        && fstab
+            .iter()
+            .any(|l| l.split_whitespace().nth(1) == Some("/var/home"));
     DataLayout {
         // When the old /var is a separate filesystem it simply gets mounted at
         // /var again; everything else moves into the stateroot's var.
-        new_var: if var_mounted { PathBuf::from("/var") } else { stateroot_var.to_path_buf() },
+        new_var: if var_mounted {
+            PathBuf::from("/var")
+        } else {
+            stateroot_var.to_path_buf()
+        },
         fstab,
         var_mounted,
         home_mounted,
@@ -225,11 +274,33 @@ fn plan_data_layout(m: &Manifest, stateroot_var: &Path) -> DataLayout {
 /// are runtime-only; they stay behind in /sysroot.
 pub fn var_entry_left_behind(rel: &str) -> bool {
     const DENY: &[&str] = &[
-        "lib/dpkg", "lib/apt", "cache/apt", "lib/snapd", "snap", "cache/snapd", "lib/rpm", "lib/dnf",
-        "cache/dnf", "cache/libdnf5", "lib/yum", "cache/yum", "run", "lock", "lib/ucf", "lib/update-notifier",
-        "lib/ubuntu-advantage", "lib/ubuntu-release-upgrader", "lib/cloud", "lib/systemd/deb-systemd-helper-enabled",
-        "lib/systemd/deb-systemd-user-helper-enabled", "lib/os-prober", "lib/selinux", "lib/sss/mc", "tmp",
-        "lib/plexy/staging", "lib/abroot",
+        "lib/dpkg",
+        "lib/apt",
+        "cache/apt",
+        "lib/snapd",
+        "snap",
+        "cache/snapd",
+        "lib/rpm",
+        "lib/dnf",
+        "cache/dnf",
+        "cache/libdnf5",
+        "lib/yum",
+        "cache/yum",
+        "run",
+        "lock",
+        "lib/ucf",
+        "lib/update-notifier",
+        "lib/ubuntu-advantage",
+        "lib/ubuntu-release-upgrader",
+        "lib/cloud",
+        "lib/systemd/deb-systemd-helper-enabled",
+        "lib/systemd/deb-systemd-user-helper-enabled",
+        "lib/os-prober",
+        "lib/selinux",
+        "lib/sss/mc",
+        "tmp",
+        "lib/plexy/staging",
+        "lib/abroot",
     ];
     DENY.contains(&rel)
 }
@@ -240,8 +311,19 @@ fn move_path(src: &Path, dst: &Path) -> Result<()> {
     match fs::rename(src, dst) {
         Ok(()) => Ok(()),
         Err(e) if e.raw_os_error() == Some(18) => {
-            run("cp", &["-a", "--reflink=auto", &src.display().to_string(), &dst.display().to_string()])?;
-            run("rm", &["-rf", "--one-file-system", &src.display().to_string()])?;
+            run(
+                "cp",
+                &[
+                    "-a",
+                    "--reflink=auto",
+                    &src.display().to_string(),
+                    &dst.display().to_string(),
+                ],
+            )?;
+            run(
+                "rm",
+                &["-rf", "--one-file-system", &src.display().to_string()],
+            )?;
             Ok(())
         }
         Err(e) => Err(e).with_context(|| format!("rename {} -> {}", src.display(), dst.display())),
@@ -260,7 +342,9 @@ fn merge_move(src: &Path, dst: &Path, journal: &mut MoveJournal) -> Result<()> {
             return Ok(());
         }
         move_path(src, dst)?;
-        journal.moves.push((src.display().to_string(), dst.display().to_string()));
+        journal
+            .moves
+            .push((src.display().to_string(), dst.display().to_string()));
         return Ok(());
     }
     let sm = fs::symlink_metadata(src)?;
@@ -277,7 +361,9 @@ fn merge_move(src: &Path, dst: &Path, journal: &mut MoveJournal) -> Result<()> {
     if !util::dry_run() {
         let _ = fs::rename(dst, &parked);
         move_path(src, dst)?;
-        journal.moves.push((src.display().to_string(), dst.display().to_string()));
+        journal
+            .moves
+            .push((src.display().to_string(), dst.display().to_string()));
     }
     Ok(())
 }
@@ -292,7 +378,10 @@ fn move_data(layout: &DataLayout, journal: &mut MoveJournal) -> Result<()> {
                 continue;
             }
             let p = top.path();
-            if fs::symlink_metadata(&p).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+            if fs::symlink_metadata(&p)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+            {
                 continue;
             }
             if p.is_dir() {
@@ -315,13 +404,24 @@ fn move_data(layout: &DataLayout, journal: &mut MoveJournal) -> Result<()> {
             }
         }
     }
-    for (old, new) in [("/root", "roothome"), ("/opt", "opt"), ("/srv", "srv"), ("/usr/local", "usrlocal")] {
+    for (old, new) in [
+        ("/root", "roothome"),
+        ("/opt", "opt"),
+        ("/srv", "srv"),
+        ("/usr/local", "usrlocal"),
+    ] {
         let p = Path::new(old);
-        let Ok(md) = fs::symlink_metadata(p) else { continue };
+        let Ok(md) = fs::symlink_metadata(p) else {
+            continue;
+        };
         if md.file_type().is_symlink() || !md.is_dir() {
             continue;
         }
-        if layout.fstab.iter().any(|l| l.split_whitespace().nth(1) == Some(&format!("/var/{new}"))) {
+        if layout
+            .fstab
+            .iter()
+            .any(|l| l.split_whitespace().nth(1) == Some(&format!("/var/{new}")))
+        {
             continue; // separately mounted, handled by fstab
         }
         for e in fs::read_dir(p)?.flatten() {
@@ -389,11 +489,19 @@ pub fn merge_accounts(
     let lib_groups = parse_group(lib_group);
     let mut gshadow = image_gshadow.trim_end().to_string();
 
-    let shadow_line = |name: &str, text: &str| text.lines().find(|l| l.split(':').next() == Some(name)).map(str::to_string);
+    let shadow_line = |name: &str, text: &str| {
+        text.lines()
+            .find(|l| l.split(':').next() == Some(name))
+            .map(str::to_string)
+    };
 
     // root's password hash carries over so the admin can still log in.
     if let Some(root) = shadow_line("root", old_shadow) {
-        let mut lines: Vec<String> = shadow.lines().filter(|l| !l.starts_with("root:")).map(str::to_string).collect();
+        let mut lines: Vec<String> = shadow
+            .lines()
+            .filter(|l| !l.starts_with("root:"))
+            .map(str::to_string)
+            .collect();
         lines.insert(0, root);
         shadow = lines.join("\n");
     }
@@ -419,15 +527,21 @@ pub fn merge_accounts(
         }
         // primary group
         if let Some(g) = m.accounts.all_groups.iter().find(|g| g.gid == h.gid)
-            && !groups.iter().any(|x| x.name == g.name) && !lib_groups.iter().any(|x| x.name == g.name) {
-                groups.push(GroupEntry { name: g.name.clone(), gid: g.gid, members: vec![] });
-                if let Some(gs) = shadow_line(&g.name, old_gshadow) {
-                    gshadow.push('\n');
-                    gshadow.push_str(&gs);
-                } else {
-                    gshadow.push_str(&format!("\n{}:!::", g.name));
-                }
+            && !groups.iter().any(|x| x.name == g.name)
+            && !lib_groups.iter().any(|x| x.name == g.name)
+        {
+            groups.push(GroupEntry {
+                name: g.name.clone(),
+                gid: g.gid,
+                members: vec![],
+            });
+            if let Some(gs) = shadow_line(&g.name, old_gshadow) {
+                gshadow.push('\n');
+                gshadow.push_str(&gs);
+            } else {
+                gshadow.push_str(&format!("\n{}:!::", g.name));
             }
+        }
     }
 
     // supplementary memberships
@@ -443,26 +557,46 @@ pub fn merge_accounts(
             // Group only in /usr/lib/group (nss-altfiles): copy it to /etc/group,
             // otherwise membership changes are invisible.
             if let Some(lg) = lib_groups.iter().find(|x| x.name == name) {
-                groups.push(GroupEntry { name: lg.name.clone(), gid: lg.gid, members: vec![user.clone()] });
+                groups.push(GroupEntry {
+                    name: lg.name.clone(),
+                    gid: lg.gid,
+                    members: vec![user.clone()],
+                });
                 continue;
             }
             // Group unknown to the target (docker, lxd, ...): recreate it with the
             // old gid if that gid is free, so file ownership stays meaningful.
             if let Some(old) = m.accounts.all_groups.iter().find(|x| &x.name == g) {
-                let taken = groups.iter().chain(lib_groups.iter()).any(|x| x.gid == old.gid);
+                let taken = groups
+                    .iter()
+                    .chain(lib_groups.iter())
+                    .any(|x| x.gid == old.gid);
                 if !taken {
-                    groups.push(GroupEntry { name: name.clone(), gid: old.gid, members: vec![user.clone()] });
+                    groups.push(GroupEntry {
+                        name: name.clone(),
+                        gid: old.gid,
+                        members: vec![user.clone()],
+                    });
                     gshadow.push_str(&format!("\n{name}:!::{user}"));
                 }
             }
         }
     }
-    let group = groups.iter().map(|g| g.to_line()).collect::<Vec<_>>().join("\n");
+    let group = groups
+        .iter()
+        .map(|g| g.to_line())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let ids = |file: &str| -> String {
         let t = util::read_opt(file).unwrap_or_default();
         t.lines()
-            .filter(|l| m.accounts.humans.iter().any(|h| l.split(':').next() == Some(h.name.as_str())))
+            .filter(|l| {
+                m.accounts
+                    .humans
+                    .iter()
+                    .any(|h| l.split(':').next() == Some(h.name.as_str()))
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -510,7 +644,12 @@ fn write_accounts(m: &Manifest, plan: &Plan, deploy: &Path) -> Result<()> {
         put("/etc/subgid", &(merged.subgid + "\n"), 0o644)?;
     }
     for h in &m.accounts.humans {
-        info(format!("  user {} (uid {}) → groups {:?}", h.name, h.uid, m.accounts.memberships.get(&h.name)));
+        info(format!(
+            "  user {} (uid {}) → groups {:?}",
+            h.name,
+            h.uid,
+            m.accounts.memberships.get(&h.name)
+        ));
     }
     Ok(())
 }
@@ -553,12 +692,19 @@ fn write_configs(plan: &Plan, deploy: &Path, staging: &Path) -> Result<Vec<Strin
         copy_preserving(src, &dst).with_context(|| format!("copy {}", c.path))?;
         written.push(dst_path.clone());
         if c.action == ConfigAction::Brew {
-            let b = staging.join("brew-etc").join(c.path.trim_start_matches("/etc/"));
+            let b = staging
+                .join("brew-etc")
+                .join(c.path.trim_start_matches("/etc/"));
             copy_preserving(src, &b)?;
         }
     }
     // Machine identity and console/locale settings are always carried.
-    for p in ["/etc/hostname", "/etc/machine-id", "/etc/vconsole.conf", "/etc/locale.conf"] {
+    for p in [
+        "/etc/hostname",
+        "/etc/machine-id",
+        "/etc/vconsole.conf",
+        "/etc/locale.conf",
+    ] {
         let src = Path::new(p);
         if src.exists() && !written.iter().any(|w| w == p) && !util::dry_run() {
             copy_preserving(src, &root_join(deploy, p))?;
@@ -587,11 +733,13 @@ fn write_configs(plan: &Plan, deploy: &Path, staging: &Path) -> Result<Vec<Strin
         }
     }
     // Debian keeps the locale in /etc/default/locale; Fedora in /etc/locale.conf.
-    if plan.source_family == Family::Debian && plan.target_family == Family::Fedora
+    if plan.source_family == Family::Debian
+        && plan.target_family == Family::Fedora
         && let Some(t) = util::read_opt("/etc/default/locale")
-            && !util::dry_run() {
-                write_file(&root_join(deploy, "/etc/locale.conf"), t)?;
-            }
+        && !util::dry_run()
+    {
+        write_file(&root_join(deploy, "/etc/locale.conf"), t)?;
+    }
     info(format!("  {} config files written", written.len()));
     Ok(written)
 }
@@ -628,12 +776,21 @@ fn enable_units(plan: &Plan, deploy: &Path) -> Result<Vec<String>> {
     let d = deploy.display().to_string();
     for u in &plan.units_to_disable {
         if !util::dry_run() && try_run("systemctl", &["--root", &d, "disable", u]).is_some() {
-            info(format!("  disabled {u} (it was disabled on the old system)"));
+            info(format!(
+                "  disabled {u} (it was disabled on the old system)"
+            ));
         }
     }
-    info(format!("  {} units enabled as on the old system", enabled.len()));
+    info(format!(
+        "  {} units enabled as on the old system",
+        enabled.len()
+    ));
     if !missing.is_empty() {
-        info(format!("  {} units have no counterpart on the target: {}", missing.len(), missing.join(" ")));
+        info(format!(
+            "  {} units have no counterpart on the target: {}",
+            missing.len(),
+            missing.join(" ")
+        ));
     }
     Ok(enabled)
 }
@@ -646,9 +803,10 @@ pub fn id_remap(old: &[PasswdEntry], new: &[PasswdEntry]) -> BTreeMap<u32, u32> 
     let mut m = BTreeMap::new();
     for o in old.iter().filter(|o| o.uid < 1000 && o.uid != 0) {
         if let Some(n) = new.iter().find(|n| n.name == o.name)
-            && n.uid != o.uid {
-                m.insert(o.uid, n.uid);
-            }
+            && n.uid != o.uid
+        {
+            m.insert(o.uid, n.uid);
+        }
     }
     m
 }
@@ -657,46 +815,77 @@ pub fn gid_remap(old: &[GroupEntry], new: &[GroupEntry]) -> BTreeMap<u32, u32> {
     let mut m = BTreeMap::new();
     for o in old.iter().filter(|o| o.gid < 1000 && o.gid != 0) {
         if let Some(n) = new.iter().find(|n| n.name == o.name)
-            && n.gid != o.gid {
-                m.insert(o.gid, n.gid);
-            }
+            && n.gid != o.gid
+        {
+            m.insert(o.gid, n.gid);
+        }
     }
     m
 }
 
-pub fn chown_tree(root: &Path, uids: &BTreeMap<u32, u32>, gids: &BTreeMap<u32, u32>, skip: &[&str]) -> usize {
+pub fn chown_tree(
+    root: &Path,
+    uids: &BTreeMap<u32, u32>,
+    gids: &BTreeMap<u32, u32>,
+    skip: &[&str],
+) -> usize {
     let mut n = 0;
     let mut stack = vec![root.to_path_buf()];
     while let Some(p) = stack.pop() {
         if skip.iter().any(|s| p.ends_with(s)) {
             continue;
         }
-        let Ok(md) = fs::symlink_metadata(&p) else { continue };
+        let Ok(md) = fs::symlink_metadata(&p) else {
+            continue;
+        };
         let nu = uids.get(&md.uid()).copied();
         let ng = gids.get(&md.gid()).copied();
-        if (nu.is_some() || ng.is_some()) && !util::dry_run() && std::os::unix::fs::lchown(&p, nu, ng).is_ok() {
+        if (nu.is_some() || ng.is_some())
+            && !util::dry_run()
+            && std::os::unix::fs::lchown(&p, nu, ng).is_ok()
+        {
             n += 1;
         }
         if md.is_dir()
-            && let Ok(rd) = fs::read_dir(&p) {
-                stack.extend(rd.flatten().map(|e| e.path()));
-            }
+            && let Ok(rd) = fs::read_dir(&p)
+        {
+            stack.extend(rd.flatten().map(|e| e.path()));
+        }
     }
     n
 }
 
 fn remap_ownership(m: &Manifest, deploy: &Path, var_root: &Path, extra: &[PathBuf]) -> Result<()> {
     let r = |p: &str| util::read_opt(root_join(deploy, p)).unwrap_or_default();
-    let new_users: Vec<PasswdEntry> = parse_passwd(&r("/usr/lib/passwd")).into_iter().chain(parse_passwd(&r("/etc/passwd"))).collect();
-    let new_groups: Vec<GroupEntry> = parse_group(&r("/usr/lib/group")).into_iter().chain(parse_group(&r("/etc/group"))).collect();
+    let new_users: Vec<PasswdEntry> = parse_passwd(&r("/usr/lib/passwd"))
+        .into_iter()
+        .chain(parse_passwd(&r("/etc/passwd")))
+        .collect();
+    let new_groups: Vec<GroupEntry> = parse_group(&r("/usr/lib/group"))
+        .into_iter()
+        .chain(parse_group(&r("/etc/group")))
+        .collect();
     let uids = id_remap(&m.accounts.all_users, &new_users);
     let gids = gid_remap(&m.accounts.all_groups, &new_groups);
     if uids.is_empty() && gids.is_empty() {
         return Ok(());
     }
-    step(format!("remapping ownership of system accounts ({} uids, {} gids differ)", uids.len(), gids.len()));
+    step(format!(
+        "remapping ownership of system accounts ({} uids, {} gids differ)",
+        uids.len(),
+        gids.len()
+    ));
     // Container layer stores carry their own id spaces: never touch them.
-    let skip = ["lib/containers", "lib/docker", "lib/lxc", "lib/lxd", "lib/machines", "home", "lib/flatpak", "lib/libvirt/images"];
+    let skip = [
+        "lib/containers",
+        "lib/docker",
+        "lib/lxc",
+        "lib/lxd",
+        "lib/machines",
+        "home",
+        "lib/flatpak",
+        "lib/libvirt/images",
+    ];
     let mut n = chown_tree(var_root, &uids, &gids, &skip);
     n += chown_tree(&deploy.join("etc"), &uids, &gids, &[]);
     for e in extra {
@@ -712,10 +901,17 @@ fn remap_ownership(m: &Manifest, deploy: &Path, var_root: &Path, extra: &[PathBu
 /// target image with the deployment and var mounted at /target.
 fn relabel(plan: &Plan, deploy: &Path, var_dirs: &[(PathBuf, &str)]) -> Result<()> {
     step("labelling migrated files with the target's SELinux policy");
-    let mut args: Vec<String> = vec!["run", "--rm", "--privileged", "--net=none", "--security-opt", "label=disable"]
-        .into_iter()
-        .map(String::from)
-        .collect();
+    let mut args: Vec<String> = vec![
+        "run",
+        "--rm",
+        "--privileged",
+        "--net=none",
+        "--security-opt",
+        "label=disable",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
     args.push("-v".into());
     args.push(format!("{}/etc:/target/etc", deploy.display()));
     let mut paths = vec!["/target/etc".to_string()];
@@ -727,12 +923,22 @@ fn relabel(plan: &Plan, deploy: &Path, var_dirs: &[(PathBuf, &str)]) -> Result<(
     args.push("--entrypoint".into());
     args.push("/usr/sbin/setfiles".into());
     args.push(plan.target_image.clone());
-    args.extend(["-F", "-r", "/target", "/etc/selinux/targeted/contexts/files/file_contexts"].map(String::from));
+    args.extend(
+        [
+            "-F",
+            "-r",
+            "/target",
+            "/etc/selinux/targeted/contexts/files/file_contexts",
+        ]
+        .map(String::from),
+    );
     args.extend(paths);
     match util::run_visible("podman", &args) {
         Ok(()) => Ok(()),
         Err(e) => {
-            warn(format!("relabel failed ({e}); the first boot will relabel instead"));
+            warn(format!(
+                "relabel failed ({e}); the first boot will relabel instead"
+            ));
             Ok(())
         }
     }
@@ -782,20 +988,35 @@ fn install_hooks(plan: &Plan, deploy: &Path, new_var: &Path, staging: &Path) -> 
     fs::create_dir_all(bin.parent().unwrap())?;
     fs::copy(&exe, &bin)?;
     fs::set_permissions(&bin, fs::Permissions::from_mode(0o755))?;
-    write_file(&root_join(deploy, "/etc/systemd/system/plexy-firstboot.service"), FIRSTBOOT_UNIT)?;
-    write_file(&root_join(deploy, "/etc/systemd/user/plexy-firstlogin.service"), FIRSTLOGIN_UNIT)?;
-    let wants = root_join(deploy, "/etc/systemd/system/multi-user.target.wants/plexy-firstboot.service");
+    write_file(
+        &root_join(deploy, "/etc/systemd/system/plexy-firstboot.service"),
+        FIRSTBOOT_UNIT,
+    )?;
+    write_file(
+        &root_join(deploy, "/etc/systemd/user/plexy-firstlogin.service"),
+        FIRSTLOGIN_UNIT,
+    )?;
+    let wants = root_join(
+        deploy,
+        "/etc/systemd/system/multi-user.target.wants/plexy-firstboot.service",
+    );
     fs::create_dir_all(wants.parent().unwrap())?;
     let _ = fs::remove_file(&wants);
     std::os::unix::fs::symlink("/etc/systemd/system/plexy-firstboot.service", &wants)?;
-    let uwants = root_join(deploy, "/etc/systemd/user/default.target.wants/plexy-firstlogin.service");
+    let uwants = root_join(
+        deploy,
+        "/etc/systemd/user/default.target.wants/plexy-firstlogin.service",
+    );
     fs::create_dir_all(uwants.parent().unwrap())?;
     let _ = fs::remove_file(&uwants);
     std::os::unix::fs::symlink("/etc/systemd/user/plexy-firstlogin.service", &uwants)?;
     // The plan travels with the system (and is what firstboot/firstlogin read).
     let state = new_var.join("lib/plexy");
     fs::create_dir_all(&state)?;
-    write_file(&state.join("plan.json"), serde_json::to_string_pretty(plan)?)?;
+    write_file(
+        &state.join("plan.json"),
+        serde_json::to_string_pretty(plan)?,
+    )?;
     // Files staged during apply (toolbox archive, brew etc) move with /var.
     if staging.exists() && staging != state.join("staging") {
         let _ = fs::rename(staging, state.join("staging"));
@@ -810,7 +1031,10 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     backup_boot()?;
     run_bootc_install(m, plan, opts)?;
     let (deploy, stateroot_var) = if util::dry_run() {
-        (PathBuf::from("/ostree/deploy/default/deploy/DRYRUN.0"), PathBuf::from("/ostree/deploy/default/var"))
+        (
+            PathBuf::from("/ostree/deploy/default/deploy/DRYRUN.0"),
+            PathBuf::from("/ostree/deploy/default/var"),
+        )
     } else {
         find_deployment(&opts.stateroot)?
     };
@@ -822,7 +1046,10 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
         let p = root_join(&deploy, "/etc/fstab");
         let mut cur = util::read_opt(&p).unwrap_or_default();
         for l in &layout.fstab {
-            if !cur.lines().any(|c| c.split_whitespace().nth(1) == l.split_whitespace().nth(1)) {
+            if !cur
+                .lines()
+                .any(|c| c.split_whitespace().nth(1) == l.split_whitespace().nth(1))
+            {
                 cur.push_str(l);
                 cur.push('\n');
             }
@@ -840,7 +1067,10 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     move_data(&layout, &mut journal)?;
     install_hooks(plan, &deploy, &layout.new_var, staging)?;
     if !util::dry_run() {
-        write_file(&layout.new_var.join("lib/plexy/moves.json"), serde_json::to_string_pretty(&journal)?)?;
+        write_file(
+            &layout.new_var.join("lib/plexy/moves.json"),
+            serde_json::to_string_pretty(&journal)?,
+        )?;
     }
 
     let mut extra = vec![];
@@ -862,7 +1092,14 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
         for d in ["roothome", "usrlocal", "lib/plexy"] {
             let p = layout.new_var.join(d);
             if p.exists() {
-                var_dirs.push((p, match d { "roothome" => "/var/roothome", "usrlocal" => "/var/usrlocal", _ => "/var/lib/plexy" }));
+                var_dirs.push((
+                    p,
+                    match d {
+                        "roothome" => "/var/roothome",
+                        "usrlocal" => "/var/usrlocal",
+                        _ => "/var/lib/plexy",
+                    },
+                ));
             }
         }
     }
@@ -886,9 +1123,23 @@ fn backup_boot() -> Result<()> {
     }
     fs::create_dir_all(dir)?;
     step("backing up /boot and the EFI system partition to /var/lib/plexy/backup");
-    for (src, name) in [("/boot", "boot.tar"), ("/boot/efi", "esp.tar"), ("/efi", "efi.tar")] {
+    for (src, name) in [
+        ("/boot", "boot.tar"),
+        ("/boot/efi", "esp.tar"),
+        ("/efi", "efi.tar"),
+    ] {
         if Path::new(src).is_dir() {
-            let _ = run("tar", &["--one-file-system", "-cf", &dir.join(name).display().to_string(), "-C", src, "."]);
+            let _ = run(
+                "tar",
+                &[
+                    "--one-file-system",
+                    "-cf",
+                    &dir.join(name).display().to_string(),
+                    "-C",
+                    src,
+                    ".",
+                ],
+            );
         }
     }
     Ok(())
@@ -914,10 +1165,19 @@ mod tests {
         for e in fs::read_dir(&src).unwrap().flatten() {
             merge_move(&e.path(), &dst.join(e.file_name()), &mut j).unwrap();
         }
-        assert_eq!(fs::read_to_string(dst.join("lib/nginx/state")).unwrap(), "user");
+        assert_eq!(
+            fs::read_to_string(dst.join("lib/nginx/state")).unwrap(),
+            "user"
+        );
         // user's version wins, image default is parked next to it
-        assert_eq!(fs::read_to_string(dst.join("log/app.log")).unwrap(), "old log");
-        assert_eq!(fs::read_to_string(dst.join("log/app.log.plexy-image-default")).unwrap(), "image default");
+        assert_eq!(
+            fs::read_to_string(dst.join("log/app.log")).unwrap(),
+            "old log"
+        );
+        assert_eq!(
+            fs::read_to_string(dst.join("log/app.log.plexy-image-default")).unwrap(),
+            "image default"
+        );
         assert_eq!(fs::read_to_string(dst.join("log/other")).unwrap(), "keep");
         assert!(!src.join("lib/nginx").exists());
         assert_eq!(j.moves.len(), 2);
@@ -955,7 +1215,10 @@ mod tests {
     #[test]
     fn target_translation() {
         assert_eq!(translate_target("/home").as_deref(), Some("/var/home"));
-        assert_eq!(translate_target("/home/bob/media").as_deref(), Some("/var/home/bob/media"));
+        assert_eq!(
+            translate_target("/home/bob/media").as_deref(),
+            Some("/var/home/bob/media")
+        );
         assert_eq!(translate_target("/homework").as_deref(), Some("/homework"));
         assert_eq!(translate_target("/"), None);
         assert_eq!(translate_target("/boot/efi"), None);
@@ -977,15 +1240,25 @@ mod tests {
     }
 
     fn manifest_with(humans: &str, groups: &str) -> Manifest {
-        let mut m: Manifest = serde_json::from_str(include_str!("../tests/data/manifest-min.json")).unwrap();
+        let mut m: Manifest =
+            serde_json::from_str(include_str!("../tests/data/manifest-min.json")).unwrap();
         m.accounts = crate::state::Accounts {
             all_users: parse_passwd(humans),
             all_groups: parse_group(groups),
-            humans: parse_passwd(humans).into_iter().filter(|u| u.uid >= 1000).collect(),
+            humans: parse_passwd(humans)
+                .into_iter()
+                .filter(|u| u.uid >= 1000)
+                .collect(),
             memberships: Default::default(),
         };
         for h in m.accounts.humans.clone() {
-            let gs = m.accounts.all_groups.iter().filter(|g| g.members.contains(&h.name)).map(|g| g.name.clone()).collect();
+            let gs = m
+                .accounts
+                .all_groups
+                .iter()
+                .filter(|g| g.members.contains(&h.name))
+                .map(|g| g.name.clone())
+                .collect();
             m.accounts.memberships.insert(h.name.clone(), gs);
         }
         m
