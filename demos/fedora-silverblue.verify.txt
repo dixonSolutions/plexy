@@ -2,8 +2,8 @@
 PASS  os is Silverblue
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/silverblue:fed1
-        Digest: sha256:9ee8f9319f6fd967a9e00221471cd3873c562bf19f5671195d7893e5197da085 (amd64)
-       Version: 44.20261017.0 (2026-10-17T11:32:28Z)
+        Digest: sha256:9371ee44df41a5caa31b4cda93e9ff304d19b0fb85fe627eeafd301bfadac9dd (amd64)
+       Version: 44.20261017.0 (2026-10-17T13:35:58Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
 PASS  password hash of tester carried
