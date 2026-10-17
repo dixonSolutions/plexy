@@ -1,0 +1,24 @@
+== Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+PASS  os is Bluefin
+PASS  booted from an ostree/bootc deployment
+● Booted image: containers-storage:localhost/plexy/bluefin:ultra-desk
+        Digest: sha256:062f9201b30a9d0d04406c94fbcbd55c65293d074da44b682a3a9346066e76b5 (amd64)
+       Version: 44.20261013 (2026-10-13T01:49:54Z)
+PASS  user alice exists
+PASS  home of alice present (/home/alice)
+PASS  password hash of alice carried
+PASS  alice in group wheel
+PASS  file /var/home/alice/Documents/thesis.txt
+PASS  file /etc/dconf/db/local.d/00-plexy-test
+PASS  file /etc/gdm/custom.conf
+PASS  command cockpit-bridge
+PASS  unit cockpit.socket enabled
+PASS  flatpak org.gnome.Calculator
+PASS  /etc/gdm/custom.conf contains 'AutomaticLogin=alice'
+FAIL  failed units: session-1.scope 
+   SELinux: Enforcing, AVC denials this boot: 5
+   firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
+   firstboot: system dconf databases rebuilt
+   firstboot: installed Flatpaks: org.videolan.VLC
+== 13 passed, 1 failed
+ULTRA-E2E-EXIT=1
