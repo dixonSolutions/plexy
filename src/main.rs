@@ -522,19 +522,14 @@ fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, S
     }
     // Meta-packages (cockpit, ubuntu-restricted-addons, ...) own no files of
     // their own: classify them by what their direct dependencies ship.
+    // Meta-packages (cockpit, ubuntu-restricted-addons, ...) ship nothing that
+    // says what they are (only docs, icons, metadata): classify them by what
+    // their direct dependencies ship.
     let meta: Vec<String> = want
         .iter()
         .filter(|n| {
-            out.get(**n)
-                .map(|f| {
-                    f.lines().all(|l| {
-                        l.starts_with("/usr/share/doc")
-                            || l.starts_with("/usr/share/licenses")
-                            || l.trim().is_empty()
-                            || l.starts_with("/.")
-                    })
-                })
-                .unwrap_or(true)
+            let t = plan::classify_files(out.get(**n).map(String::as_str).unwrap_or(""));
+            !t.cli && !t.gui && !t.host_level && t.desktop_files.is_empty()
         })
         .map(|n| n.to_string())
         .collect();
