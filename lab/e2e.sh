@@ -17,13 +17,13 @@ record=${2:-}
 declare -A VM ARGS EXPECT SNAP CMD CUSTOMIZE NOREBOOT EXPECT_OUTPUT
 VM[fedora-silverblue]=fed1
 ARGS[fedora-silverblue]="--target silverblue --mode image"
-EXPECT[fedora-silverblue]='EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[fedora-silverblue]='EXPECT_WAITFILE=/var/lib/plexy/layer.done EXPECT_BOOTED_IMAGE=quay.io/fedora/fedora-silverblue:44 EXPECT_LAYERED="htop nginx tmux" EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_MOUNTS="/var /var/home" EXPECT_GREP="/etc/tmux.conf:mouse"'
 
 VM[ultramarine-bluefin]=ultra1
 ARGS[ultramarine-bluefin]="--target bluefin --mode hybrid"
-EXPECT[ultramarine-bluefin]='EXPECT_WAITFILE=/var/home/alice/.local/state/plexy/firstlogin.done EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version" EXPECT_SESSION=alice EXPECT_OS=Bluefin EXPECT_USERS=alice EXPECT_GROUPS=alice:wheel
+EXPECT[ultramarine-bluefin]='EXPECT_BOOTED_IMAGE=ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=cockpit EXPECT_WAITFILE="/var/lib/plexy/layer.done /var/home/alice/.local/state/plexy/firstlogin.done" EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version" EXPECT_SESSION=alice EXPECT_OS=Bluefin EXPECT_USERS=alice EXPECT_GROUPS=alice:wheel
 EXPECT_FILES="/var/home/alice/Documents/thesis.txt /etc/dconf/db/local.d/00-plexy-test /etc/gdm/custom.conf"
 EXPECT_CMDS="cockpit-bridge" EXPECT_ENABLED="cockpit.socket" EXPECT_FLATPAKS=org.gnome.Calculator
 EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=alice"'
@@ -38,7 +38,7 @@ EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version"'
 VM[ubuntu-bluefin]=ubu1
 SNAP[ubuntu-bluefin]=loaded-bluefin
 ARGS[ubuntu-bluefin]="--target bluefin --mode hybrid"
-EXPECT[ubuntu-bluefin]='EXPECT_WAITFILE=/var/home/tester/.local/state/plexy/firstlogin.done EXPECT_USERCMDS="tester:nvim:--version tester:rg:--version" EXPECT_SESSION=tester EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[ubuntu-bluefin]='EXPECT_BOOTED_IMAGE=ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_WAITFILE="/var/lib/plexy/layer.done /var/home/tester/.local/state/plexy/firstlogin.done" EXPECT_USERCMDS="tester:nvim:--version tester:rg:--version" EXPECT_SESSION=tester EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/etc/tmux.conf /var/home/tester/Documents/notes.txt" EXPECT_CMDS="nginx" EXPECT_ACTIVE="nginx.service gdm.service sshd.service"
 EXPECT_FLATPAKS=org.mozilla.firefox EXPECT_GREP="/etc/gdm/custom.conf:AutomaticLogin=tester"'
 
@@ -51,7 +51,7 @@ EXPECT_GREP="/etc/gdm3/daemon.conf:AutomaticLogin=tester"'
 
 VM[debian-bluefin]=deb1
 ARGS[debian-bluefin]="--target bluefin --mode hybrid"
-EXPECT[debian-bluefin]='EXPECT_STARTUSER=tester EXPECT_WAITFILE=/var/home/tester/.local/state/plexy/firstlogin.done EXPECT_USERCMDS="tester:nvim:--version tester:rg:--version" EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[debian-bluefin]='EXPECT_BOOTED_IMAGE=ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_STARTUSER=tester EXPECT_WAITFILE="/var/lib/plexy/layer.done /var/home/tester/.local/state/plexy/firstlogin.done" EXPECT_USERCMDS="tester:nvim:--version tester:rg:--version" EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="nginx htop tmux"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 
@@ -78,12 +78,13 @@ EXPECT_OUTPUT[ultra40-refusal]='GiB needed'
 # debian-cleanup / ultramarine-export: run on the migrated guests.
 VM[debian-cleanup]=deb1
 VM[ultramarine-export]=ultra1
+VM[ultramarine-bluefin-reboot]=ultra1
 
 # silverblue-bluefin: run right after fedora-silverblue. Starts from an
 # image-based OS and moves it to another image with `plexy switch`.
 VM[silverblue-bluefin]=fed1
 ARGS[silverblue-bluefin]="--target bluefin"
-EXPECT[silverblue-bluefin]='EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT[silverblue-bluefin]='EXPECT_BOOTED_IMAGE=ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_OS=Bluefin EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
 EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 
@@ -111,6 +112,17 @@ if [[ $scenario == debian-cleanup ]]; then
     sleep 30
     "$L" wait "$vm" 900
     EXPECT[$scenario]=${EXPECT[debian-bluefin]}
+    L_VERIFY
+    exit
+fi
+if [[ $scenario == ultramarine-bluefin-reboot ]]; then
+    # After layering, the signed rebase is staged for the next boot.
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'test -e /var/lib/plexy/layer.done' || { echo "$vm has not finished layering: run ultramarine-bluefin first" >&2; exit 1; }
+    "$L" ssh "$vm" 'systemctl reboot' || true
+    sleep 30
+    "$L" wait "$vm" 900
+    EXPECT[$scenario]='EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=cockpit EXPECT_ENABLED=cockpit.socket EXPECT_USERS=alice EXPECT_FILES=/var/home/alice/Documents/thesis.txt'
     L_VERIFY
     exit
 fi

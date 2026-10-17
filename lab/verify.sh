@@ -11,9 +11,12 @@
 #   EXPECT_FLATPAKS  flatpak app ids that must be installed
 #   EXPECT_MOUNTS    mount points that must be mounted
 #   EXPECT_GREP      "file:pattern" pairs (config content survived)
-#   EXPECT_WAITFILE  wait (up to 15 min) for this file first (e.g. first-login done)
+#   EXPECT_WAITFILE  wait (up to 15 min each) for these files first (first-login, layering done)
 #   EXPECT_USERCMDS  user:command:args run as that user in a login shell
 #   EXPECT_SESSION   user who must have a graphical session on seat0 (autologin works)
+#   EXPECT_BOOTED_IMAGE substring the booted image reference must contain (bootc status)
+#   EXPECT_LAYERED   packages rpm-ostree must list as layered (client-side)
+#   EXPECT_ORIGIN    substring of the booted deployment's origin (e.g. ostree-image-signed)
 #   EXPECT_STARTUSER user whose systemd user manager is started as a login would
 #                    (headless guests: runs plexy's first-login stage)
 pass=0 fail=0
@@ -24,11 +27,24 @@ chk() { desc=$1; shift; if "$@" >/dev/null 2>&1; then ok "$desc"; else ko "$desc
 if [ -n "$EXPECT_STARTUSER" ]; then
   systemctl start "user@$(id -u "$EXPECT_STARTUSER").service"
 fi
-if [ -n "$EXPECT_WAITFILE" ]; then
-  i=0; while [ ! -e "$EXPECT_WAITFILE" ] && [ $i -lt 180 ]; do sleep 5; i=$((i + 1)); done
-fi
+for wf in $EXPECT_WAITFILE; do
+  i=0; while [ ! -e "$wf" ] && [ $i -lt 180 ]; do sleep 5; i=$((i + 1)); done
+  [ -e "$wf" ] || echo "   (gave up waiting for $wf)"
+done
 . /etc/os-release
 echo "== $PRETTY_NAME (kernel $(uname -r))"
+if [ -n "$EXPECT_BOOTED_IMAGE" ]; then
+  img=$(bootc status --format=json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); i=d["status"]["booted"]["image"]["image"]; print(i.get("transport",""), i["image"])' 2>/dev/null)
+  case "$img" in *"$EXPECT_BOOTED_IMAGE"*) ok "booted image $img" ;; *) ko "booted image $EXPECT_BOOTED_IMAGE (got $img)" ;; esac
+fi
+if [ -n "$EXPECT_ORIGIN" ]; then
+  org=$(rpm-ostree status --json --booted 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference",""))' 2>/dev/null)
+  case "$org" in *"$EXPECT_ORIGIN"*) ok "origin $org" ;; *) ko "origin $EXPECT_ORIGIN (got $org)" ;; esac
+fi
+for pk in $EXPECT_LAYERED; do
+  chk "layered package $pk" sh -c "rpm-ostree status --json --booted | python3 -c 'import json,sys; d=json.load(sys.stdin)[\"deployments\"][0]; sys.exit(0 if \"$pk\" in d.get(\"requested-packages\",[])+d.get(\"packages\",[]) else 1)'"
+done
+[ -f /var/lib/plexy/layer.log ] && sed 's/^/   layer: /' /var/lib/plexy/layer.log | tail -3
 if [ -n "$EXPECT_SESSION" ]; then
   # autologin: wait up to 2 min for the user's session on seat0
   i=0; while ! loginctl list-sessions --no-legend | awk '$4 == "seat0" {print $3}' | grep -qx "$EXPECT_SESSION" && [ $i -lt 24 ]; do sleep 5; i=$((i + 1)); done
