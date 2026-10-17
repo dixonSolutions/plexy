@@ -985,11 +985,7 @@ fn install_hooks(plan: &Plan, deploy: &Path, new_var: &Path, staging: &Path) -> 
         return Ok(());
     }
     // /proc/self/exe stays valid even after /usr/local (and this binary) moved.
-    let exe = PathBuf::from("/proc/self/exe");
-    let bin = new_var.join("usrlocal/bin/plexy");
-    fs::create_dir_all(bin.parent().unwrap())?;
-    fs::copy(&exe, &bin)?;
-    fs::set_permissions(&bin, fs::Permissions::from_mode(0o755))?;
+    install_self(&new_var.join("usrlocal/bin/plexy"))?;
     write_file(
         &root_join(deploy, "/etc/systemd/system/plexy-firstboot.service"),
         FIRSTBOOT_UNIT,
@@ -1129,6 +1125,18 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     if opts.reboot && !util::dry_run() {
         run("systemctl", &["reboot"])?;
     }
+    Ok(())
+}
+
+/// Install the running plexy binary at `dst`. Copies from /proc/self/exe
+/// (valid even after /usr/local was moved) to a temporary file and renames it
+/// into place, because `dst` may be this very binary, still executing.
+pub fn install_self(dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst.parent().context("bad path")?)?;
+    let tmp = dst.with_extension("plexy-new");
+    fs::copy("/proc/self/exe", &tmp)?;
+    fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))?;
+    fs::rename(&tmp, dst)?;
     Ok(())
 }
 

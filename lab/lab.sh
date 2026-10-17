@@ -42,7 +42,7 @@ vars_template() {
 port_of() { cat "$RUN/$1.port"; }
 
 guestfs() {
-    podman run --rm --device /dev/kvm -v "$LAB:$LAB:z" -w "$LAB" "$GUESTFS_IMG" "$@"
+    podman run --rm -i --device /dev/kvm -v "$LAB:$LAB:z" -w "$LAB" "$GUESTFS_IMG" "$@"
 }
 
 make_seed() { # NAME
