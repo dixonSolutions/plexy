@@ -484,7 +484,20 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     let st = run("/bin/sh", &["-c", &sh]);
     let _ = run("podman", &["rm", "-f", &cname]);
     st?;
+    // The image ships its kernel, config and System.map in /boot; vos-boot is
+    // mounted over that directory, so carry them across first.
+    let held = a.join(".plexy-image-boot");
+    fs::create_dir_all(&held)?;
+    for e in fs::read_dir(a.join("boot"))?.flatten() {
+        if e.path().is_file() {
+            fs::rename(e.path(), held.join(e.file_name()))?;
+        }
+    }
     mount(&layout.boot, &a.join("boot"), &[])?;
+    for e in fs::read_dir(&held)?.flatten() {
+        apply::move_path(&e.path(), &a.join("boot").join(e.file_name()))?;
+    }
+    let _ = fs::remove_dir(&held);
     match &layout.esp {
         Some(p) => mount(p, &a.join("boot/efi"), &[])?,
         None => mount("/boot/efi", &a.join("boot/efi"), &["--bind"])?,
