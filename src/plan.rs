@@ -994,7 +994,9 @@ pub fn is_distro_repo(content: &str) -> bool {
         "cdn.fedoraproject.org",
     ];
     let urls: Vec<&str> = content
-        .split_whitespace()
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .flat_map(str::split_whitespace)
         .filter(|w| w.contains("://") || w.starts_with("metalink=") || w.starts_with("baseurl="))
         .collect();
     !urls.is_empty()
