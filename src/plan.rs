@@ -774,9 +774,12 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
 
     // Repositories: carry only what the target lacks (third-party, COPR,
     // remix repos like Terra); the target's own distro repos are already there.
-    let needed = |r: &&crate::manifest::RepoFile| match &r.owner {
-        None => true,
-        Some(o) => !t.packages.contains(o),
+    let needed = |r: &&crate::manifest::RepoFile| {
+        !is_distro_repo(&r.content)
+            && match &r.owner {
+                None => true,
+                Some(o) => !t.packages.contains(o),
+            }
     };
     // A repo definition only works in the system image when the image is the
     // same platform: any Fedora-family pair ($releasever based), but for the
@@ -809,7 +812,11 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         })
         .map(|r| r.path.clone())
         .collect();
-    if !image_repos_ok && m.repos.iter().any(|r| r.owner.is_none()) {
+    if !image_repos_ok
+        && m.repos
+            .iter()
+            .any(|r| r.owner.is_none() && !is_distro_repo(&r.content))
+    {
         warnings.push(format!(
             "third-party repositories from {} cannot be used by {}; their packages are routed to the toolbox",
             m.os.pretty_name, t.pretty_name
@@ -869,6 +876,30 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         kargs: m.boot.kargs.clone(),
         warnings,
     })
+}
+
+/// Repository definitions that only point at a distribution's own archive
+/// (the toolbox image and the target already have those).
+pub fn is_distro_repo(content: &str) -> bool {
+    const DISTRO_HOSTS: &[&str] = &[
+        "archive.ubuntu.com",
+        "security.ubuntu.com",
+        "ports.ubuntu.com",
+        "deb.debian.org",
+        "security.debian.org",
+        "mirrors.fedoraproject.org",
+        "download.fedoraproject.org",
+        "dl.fedoraproject.org",
+        "cdn.fedoraproject.org",
+    ];
+    let urls: Vec<&str> = content
+        .split_whitespace()
+        .filter(|w| w.contains("://") || w.starts_with("metalink=") || w.starts_with("baseurl="))
+        .collect();
+    !urls.is_empty()
+        && urls
+            .iter()
+            .all(|u| DISTRO_HOSTS.iter().any(|h| u.contains(h)))
 }
 
 /// Container image used for the source-distro toolbox.
@@ -1111,6 +1142,22 @@ mod tests {
             etc_translate("/etc/hosts", Family::Debian, Family::Fedora),
             "/etc/hosts"
         );
+    }
+
+    #[test]
+    fn distro_repo_detection() {
+        assert!(is_distro_repo(
+            "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: resolute\n"
+        ));
+        assert!(is_distro_repo(
+            "[fedora]\nmetalink=https://mirrors.fedoraproject.org/metalink?repo=fedora-$releasever\n"
+        ));
+        assert!(!is_distro_repo(
+            "deb [signed-by=/k.gpg] https://download.docker.com/linux/ubuntu noble stable\n"
+        ));
+        assert!(!is_distro_repo(
+            "[terra]\nbaseurl=https://repos.fyralabs.com/terra$releasever\n"
+        ));
     }
 
     #[test]

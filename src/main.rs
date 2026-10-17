@@ -462,7 +462,11 @@ fn make_plan_inner(
     t: &TargetArgs,
     mode: Mode,
 ) -> Result<plan::Plan> {
-    let files = package_files(m, mode == Mode::Toolbox || t.include_preinstalled)?;
+    let files = package_files(
+        m,
+        mode == Mode::Toolbox || t.include_preinstalled,
+        &facts.packages,
+    )?;
     let brew_index = if matches!(mode, Mode::Brew | Mode::Hybrid) {
         load_brew_index()
     } else {
@@ -481,7 +485,11 @@ fn make_plan_inner(
 }
 
 /// File listings for the packages the planner will look at, in one pass.
-fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, String>> {
+fn package_files(
+    m: &manifest::Manifest,
+    all: bool,
+    target_pkgs: &BTreeSet<String>,
+) -> Result<BTreeMap<String, String>> {
     let want: BTreeSet<&str> = if all {
         m.packages.installed.keys().map(String::as_str).collect()
     } else {
@@ -542,6 +550,31 @@ fn package_files(m: &manifest::Manifest, all: bool) -> Result<BTreeMap<String, S
         }
         if !files.is_empty() {
             out.entry(n).or_default().push_str(&files);
+        }
+    }
+    // Services are often split from their binaries (Debian's nginx ships the
+    // binary, nginx-common the unit). A user package whose direct dependencies
+    // (absent from the target) ship service units is host-level software.
+    for p in &m.packages.user_installed {
+        for dep in direct_deps(&m.packages.manager, &p.name) {
+            if target_pkgs.contains(&dep) {
+                continue;
+            }
+            let Some(f) = dep_files(&m.packages.manager, &dep) else {
+                continue;
+            };
+            let units: String = f
+                .lines()
+                .filter(|l| {
+                    (l.starts_with("/usr/lib/systemd/system/")
+                        || l.starts_with("/lib/systemd/system/"))
+                        && (l.ends_with(".service") || l.ends_with(".socket"))
+                })
+                .map(|l| format!("{l}\n"))
+                .collect();
+            if !units.is_empty() {
+                out.entry(p.name.clone()).or_default().push_str(&units);
+            }
         }
     }
     Ok(out)
