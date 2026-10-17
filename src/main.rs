@@ -897,10 +897,21 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
                 "containers-storage",
                 &p.derived_image,
             ],
-        )
+        )?;
     } else {
-        util::run_visible("bootc", &["switch", &p.target_image])
+        util::run_visible("bootc", &["switch", &p.target_image])?;
     }
+    // Record what this image layers, so a later switch keeps it too.
+    let state = Path::new(firstrun::STATE);
+    let current = state.join("plan.json");
+    if current.exists() {
+        let _ = fs::copy(&current, state.join("plan.prev.json"));
+    }
+    if !util::dry_run() {
+        fs::create_dir_all(state)?;
+        fs::write(&current, serde_json::to_string_pretty(&p)?)?;
+    }
+    Ok(())
 }
 
 /// Remove the previous OS from the physical root once the new one works.
