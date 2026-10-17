@@ -746,6 +746,10 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
     pkgs.sort_by(|a, b| a.dest.cmp(&b.dest).then(a.name.cmp(&b.name)));
 
     // --- configs ------------------------------------------------------------
+    // Copy every local /etc change only between compatible platforms: any
+    // pair of Fedora-family systems (remixes share Fedora's base), or the
+    // same Debian-family distribution. Otherwise only portable config.
+    let same_platform = from == to && (from == Family::Fedora || m.os.id == t.os_id);
     let dest_of: BTreeMap<&str, Dest> = pkgs.iter().map(|p| (p.name.as_str(), p.dest)).collect();
     let mut configs = vec![];
     for c in &m.packages.config_changes {
@@ -771,7 +775,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     pc.action = ConfigAction::Brew;
                     pc.why = "config of a tool moved to Homebrew".into();
                 }
-                Dest::Skip if from != to && !etc_portable_any(&c.path, from, to) => {
+                Dest::Skip if !same_platform && !etc_portable_any(&c.path, from, to) => {
                     pc.why = "package not migrated".into();
                 }
                 _ => {
@@ -779,7 +783,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     pc.why = "local modification".into();
                 }
             }
-        } else if from == to || etc_portable_any(&c.path, from, to) {
+        } else if same_platform || etc_portable_any(&c.path, from, to) {
             pc.action = ConfigAction::Etc;
             pc.why = match c.kind {
                 ConfigKind::Unowned => "created locally".into(),
