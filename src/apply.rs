@@ -801,6 +801,21 @@ fn write_accounts(m: &Manifest, plan: &Plan, deploy: &Path) -> Result<()> {
 
 // ----------------------------------------------------------------- config ---
 
+/// A config that is a symlink whose target does not exist in the new root
+/// (e.g. Ubuntu's /etc/modprobe.d/blacklist-oss.conf pointing into a package
+/// the target lacks). Copying it would leave a dangling link that tools trip on.
+pub fn dangling_in_new_root(src: &Path, dst: &Path, root: &Path) -> bool {
+    let Ok(target) = fs::read_link(src) else {
+        return false;
+    };
+    let resolved = if target.is_absolute() {
+        root_join(root, target.display().to_string())
+    } else {
+        dst.parent().unwrap_or(root).join(&target)
+    };
+    fs::symlink_metadata(&resolved).is_err()
+}
+
 pub fn copy_preserving(src: &Path, dst: &Path) -> Result<()> {
     let md = fs::symlink_metadata(src)?;
     if let Some(p) = dst.parent() {
@@ -830,6 +845,13 @@ fn write_configs(plan: &Plan, deploy: &Path, staging: &Path) -> Result<Vec<Strin
         }
         let dst_path = etc_translate(&c.path, plan.source_family, plan.target_family);
         let dst = root_join(deploy, &dst_path);
+        if dangling_in_new_root(src, &dst, deploy) {
+            info(format!(
+                "  skipping {}: its link target is not in the new system",
+                c.path
+            ));
+            continue;
+        }
         if util::dry_run() {
             info(format!("[dry-run] {} → {}", c.path, dst_path));
             continue;

@@ -578,6 +578,7 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
             etc_translate(&c.path, plan.source_family, plan.target_family),
         );
         if fs::symlink_metadata(&c.path).is_ok()
+            && !apply::dangling_in_new_root(Path::new(&c.path), &dst, &a)
             && apply::copy_preserving(Path::new(&c.path), &dst).is_ok()
         {
             n += 1;
@@ -630,7 +631,9 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
             .any(|p| name.starts_with(p))
             && e.path().is_file()
         {
-            fs::rename(e.path(), a.join("boot/init/vos-a").join(&name))?;
+            // /boot (vos-boot) and /boot/init (the init LV) are different
+            // filesystems.
+            apply::move_path(&e.path(), &a.join("boot/init/vos-a").join(&name))?;
         }
     }
     let vmlinuz = a.join(format!("boot/init/vos-a/vmlinuz-{kver}"));
@@ -811,6 +814,24 @@ fn copy_data(a: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dangling_config_links_are_detected() {
+        let t = std::env::temp_dir().join(format!("plexy-dangle-{}", std::process::id()));
+        let (old, new) = (t.join("old/etc"), t.join("new"));
+        fs::create_dir_all(&old).unwrap();
+        fs::create_dir_all(new.join("etc")).unwrap();
+        fs::create_dir_all(new.join("usr/share")).unwrap();
+        fs::write(new.join("usr/share/real.conf"), "x").unwrap();
+        std::os::unix::fs::symlink("/lib/gone/noOSS.conf", old.join("a.conf")).unwrap();
+        std::os::unix::fs::symlink("/usr/share/real.conf", old.join("b.conf")).unwrap();
+        fs::write(old.join("c.conf"), "plain").unwrap();
+        let d = |n: &str| apply::dangling_in_new_root(&old.join(n), &new.join("etc").join(n), &new);
+        assert!(d("a.conf"));
+        assert!(!d("b.conf"));
+        assert!(!d("c.conf"));
+        let _ = fs::remove_dir_all(&t);
+    }
 
     #[test]
     fn initramfs_for_the_named_kernel() {
