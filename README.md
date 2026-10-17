@@ -154,12 +154,21 @@ is guaranteed.**
 | Fedora 44 Cloud (btrfs subvols, nginx, sshd tweak) | Fedora Silverblue 44 | image | **17/17** | [cast](demos/fedora-silverblue.cast) · [gif](demos/fedora-silverblue.gif) · [verify](demos/fedora-silverblue.verify.txt) · [screen](demos/fedora-silverblue-login.png) |
 | …then `plexy rollback` | Fedora 44 Cloud again | — | **14/14** (chronyd ownership restored) | [verify](demos/fedora-rollback.verify.txt) |
 | Ultramarine 44 GNOME (ext4, RPM Fusion, Terra, GNOME ext., dconf, Flatpak) | Bluefin | hybrid | **13/14**¹ + desktop checked by hand | [cast](demos/ultramarine-bluefin.cast) · [gif](demos/ultramarine-bluefin.gif) · [verify](demos/ultramarine-bluefin.verify.txt) · [desktop](demos/ultramarine-bluefin-desktop.png) · [VLC → Flathub](demos/ultramarine-bluefin-vlc-flatpak.png) |
+| Ubuntu 26.04 GNOME (ext4, apt, nginx/tmux/neovim, Firefox snap) | Bluefin | hybrid | **16/16**² (cross-family: deb → rpm) | [cast](demos/ubuntu-bluefin.cast) · [gif](demos/ubuntu-bluefin.gif) · [verify](demos/ubuntu-bluefin.verify.txt) · [desktop](demos/ubuntu-bluefin-desktop.png) |
 
 ¹ alice's migrated password unlocks her session; her dconf (dark mode, enabled extensions) applies;
 VLC (an RPM Fusion package) runs as `org.videolan.VLC`; `nvim` and `rg` were installed by Homebrew at
 first login; Cockpit is layered into the derived image with its socket enabled. The one failed check
 was `session-1.scope`, a root SSH session opened by the test harness that exited before systemd
 registered it — not a migration defect; `verify.sh` now ignores transient session scopes.
+
+² The Firefox snap became the `org.mozilla.firefox` Flatpak, and GDM autologin and the tmux config
+carried over. SELinux is enforcing, but that boot logged 51 AVC denials: an ext4 Ubuntu root has
+no SELinux labels. No unit failed. The denials have not been looked at one by one.
+
+Plexy also refuses to change your desktop: on a GNOME host, `plexy diff --target aurora` (KDE) stops with
+an explanation, and `--target auto` picks a GNOME image
+([cast](demos/desktop-refusal.cast) · [gif](demos/desktop-refusal.gif)).
 
 ![Fedora to Silverblue](demos/fedora-silverblue.gif)
 
