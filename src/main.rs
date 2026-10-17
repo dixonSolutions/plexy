@@ -913,6 +913,55 @@ fn write_plan_dir(
     Ok(())
 }
 
+/// Whether this host's containers policy already verifies signatures for
+/// `image` (a sigstoreSigned/signedBy entry for a prefix of it).
+fn host_trusts(image: &str) -> bool {
+    let text = fs::read_to_string("/etc/containers/policy.json").unwrap_or_default();
+    policy_trusts(&text, image)
+}
+
+pub fn policy_trusts(policy_json: &str, image: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(policy_json) else {
+        return false;
+    };
+    let Some(docker) = v.pointer("/transports/docker").and_then(|d| d.as_object()) else {
+        return false;
+    };
+    let repo = image.split(['@']).next().unwrap_or(image);
+    docker.iter().any(|(scope, reqs)| {
+        (repo == scope
+            || repo.starts_with(&format!("{scope}/"))
+            || repo.starts_with(&format!("{scope}:")))
+            && reqs.as_array().is_some_and(|a| {
+                a.iter().any(|r| {
+                    matches!(
+                        r.get("type").and_then(|t| t.as_str()),
+                        Some("sigstoreSigned") | Some("signedBy")
+                    )
+                })
+            })
+    })
+}
+
+/// Install plexy-layer (service + timer) on this image-based host so the
+/// signed rebase happens on the switched system; /etc carries over.
+fn schedule_signed_rebase() -> Result<()> {
+    apply::install_self(Path::new("/usr/local/bin/plexy"))?;
+    let state = Path::new(firstrun::STATE);
+    let _ = fs::remove_file(state.join("layer.done"));
+    util::write_file(
+        Path::new("/etc/systemd/system/plexy-layer.service"),
+        apply::LAYER_UNIT,
+    )?;
+    util::write_file(
+        Path::new("/etc/systemd/system/plexy-layer.timer"),
+        apply::LAYER_TIMER,
+    )?;
+    util::run("systemctl", &["daemon-reload"])?;
+    util::run("systemctl", &["enable", "plexy-layer.timer"])?;
+    Ok(())
+}
+
 /// Packages layered on the booted deployment (rpm-ostree carries these
 /// requests across a rebase).
 fn requested_packages() -> BTreeSet<String> {
@@ -1144,13 +1193,26 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
         // Follow the upstream remote directly; layered packages ride along.
         let requested = requested_packages();
         let base: BTreeSet<String> = p.names_for(Dest::Base).into_iter().collect();
+        // A host that does not trust the target's signing key yet (stock
+        // Silverblue has no policy for ghcr.io/ublue-os) cannot verify the
+        // signed reference: rebase unverified now, and let plexy-layer switch
+        // to the signed reference once the new image (with its policy) runs —
+        // Universal Blue's documented two-step.
+        let signed_now = p.update_signed && host_trusts(p.remote());
         let args = rebase_args(
-            &ostree_ref(p.remote(), p.update_signed),
+            &ostree_ref(p.remote(), signed_now),
             &p.names_for(Dest::Image),
             &requested,
             &base,
         );
         util::run_visible("rpm-ostree", &args)?;
+        if p.update_signed && !signed_now && !util::dry_run() {
+            schedule_signed_rebase()?;
+            info(format!(
+                "after the next boot, plexy-layer switches updates to {}",
+                ostree_ref(p.remote(), true)
+            ));
+        }
     } else if uses_derived(&p, &dir) {
         util::run_visible(
             "bootc",
@@ -1253,6 +1315,16 @@ mod tests {
             !a.iter().any(|x| x == "nginx"),
             "nginx is already requested"
         );
+    }
+
+    #[test]
+    fn signature_policy_detection() {
+        let stock = r#"{"default":[{"type":"insecureAcceptAnything"}],"transports":{"docker-daemon":{"":[{"type":"insecureAcceptAnything"}]}}}"#;
+        assert!(!policy_trusts(stock, "ghcr.io/ublue-os/bluefin:stable"));
+        let ublue = r#"{"default":[{"type":"insecureAcceptAnything"}],"transports":{"docker":{"ghcr.io/ublue-os":[{"type":"sigstoreSigned","keyPaths":["/usr/lib/pki/containers/ublue-os.pub"]}]}}}"#;
+        assert!(policy_trusts(ublue, "ghcr.io/ublue-os/bluefin:stable"));
+        assert!(!policy_trusts(ublue, "ghcr.io/ublue-osx/evil:latest"));
+        assert!(!policy_trusts(ublue, "quay.io/fedora/fedora-silverblue:44"));
     }
 
     #[test]
