@@ -844,8 +844,27 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         None
     };
 
-    // Units the admin enabled that will exist on the target.
-    let units_to_enable = m.system.enabled_units.clone();
+    // Units: replay the old system's enabled state, translating names across
+    // families. Disables are only replayed within a family, and never for
+    // units the target's desktop/session depends on.
+    let mut units_to_enable: Vec<String> = m
+        .system
+        .enabled_units
+        .iter()
+        .map(|u| translate_unit(u, from, to))
+        .collect();
+    units_to_enable.sort();
+    units_to_enable.dedup();
+    let units_to_disable: Vec<String> = if from == to {
+        m.system
+            .disabled_units
+            .iter()
+            .filter(|u| !unit_protected(u))
+            .cloned()
+            .collect()
+    } else {
+        vec![]
+    };
 
     let derived_image = format!(
         "localhost/plexy/{}:{}",
@@ -872,10 +891,75 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         toolbox,
         flatpaks_to_install: flatpaks,
         units_to_enable,
-        units_to_disable: m.system.disabled_units.clone(),
+        units_to_disable,
         kargs: m.boot.kargs.clone(),
         warnings,
     })
+}
+
+/// Service names that differ between the Debian and Fedora families.
+const UNIT_NAMES: &[(&str, &str)] = &[
+    ("ssh.service", "sshd.service"),
+    ("ssh.socket", "sshd.service"),
+    ("cron.service", "crond.service"),
+    ("apache2.service", "httpd.service"),
+    ("gdm3.service", "gdm.service"),
+    ("smbd.service", "smb.service"),
+    ("nmbd.service", "nmb.service"),
+    ("isc-dhcp-server.service", "dhcpd.service"),
+    ("bind9.service", "named.service"),
+    ("named.service", "named.service"),
+    ("mysql.service", "mariadb.service"),
+    ("redis-server.service", "redis.service"),
+    ("nfs-kernel-server.service", "nfs-server.service"),
+    ("ufw.service", "firewalld.service"),
+    ("rsyslog.service", "rsyslog.service"),
+    ("chrony.service", "chronyd.service"),
+    ("systemd-timesyncd.service", "chronyd.service"),
+];
+
+pub fn translate_unit(u: &str, from: Family, to: Family) -> String {
+    match (from, to) {
+        (Family::Debian, Family::Fedora) => UNIT_NAMES
+            .iter()
+            .find(|(d, _)| *d == u)
+            .map(|(_, f)| f.to_string()),
+        (Family::Fedora, Family::Debian) => UNIT_NAMES
+            .iter()
+            .find(|(_, f)| *f == u)
+            .map(|(d, _)| d.to_string()),
+        _ => None,
+    }
+    .unwrap_or_else(|| u.to_string())
+}
+
+/// Units whose disabled state must never be replayed onto the target: the
+/// display manager and session plumbing the new desktop needs.
+pub fn unit_protected(u: &str) -> bool {
+    const PROTECTED: &[&str] = &[
+        "gdm.service",
+        "gdm3.service",
+        "sddm.service",
+        "lightdm.service",
+        "plasmalogin.service",
+        "cosmic-greeter.service",
+        "display-manager.service",
+        "dbus.service",
+        "dbus-broker.service",
+        "NetworkManager.service",
+        "polkit.service",
+        "upower.service",
+        "rtkit-daemon.service",
+        "accounts-daemon.service",
+        "bluetooth.service",
+        "switcheroo-control.service",
+    ];
+    PROTECTED.contains(&u)
+        || u.starts_with("systemd-")
+        || u.ends_with(".target")
+        || u.starts_with("ostree")
+        || u.starts_with("bootc")
+        || u.starts_with("rpm-ostree")
 }
 
 /// Repository definitions that only point at a distribution's own archive
@@ -1142,6 +1226,34 @@ mod tests {
             etc_translate("/etc/hosts", Family::Debian, Family::Fedora),
             "/etc/hosts"
         );
+    }
+
+    #[test]
+    fn unit_translation_and_protection() {
+        assert_eq!(
+            translate_unit("ssh.service", Family::Debian, Family::Fedora),
+            "sshd.service"
+        );
+        assert_eq!(
+            translate_unit("ssh.socket", Family::Debian, Family::Fedora),
+            "sshd.service"
+        );
+        assert_eq!(
+            translate_unit("sshd.service", Family::Fedora, Family::Debian),
+            "ssh.service"
+        );
+        assert_eq!(
+            translate_unit("nginx.service", Family::Debian, Family::Fedora),
+            "nginx.service"
+        );
+        assert_eq!(
+            translate_unit("ssh.service", Family::Fedora, Family::Fedora),
+            "ssh.service"
+        );
+        assert!(unit_protected("gdm.service"));
+        assert!(unit_protected("reboot.target"));
+        assert!(unit_protected("systemd-sysext.service"));
+        assert!(!unit_protected("cups.service"));
     }
 
     #[test]

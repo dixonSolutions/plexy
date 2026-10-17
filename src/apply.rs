@@ -28,9 +28,25 @@ pub struct ApplyOpts {
     pub stateroot: String,
 }
 
+/// Everything `plexy rollback` needs to undo the data moves, recorded at apply
+/// time with paths as the *old* system saw them.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MoveJournal {
     pub moves: Vec<(String, String)>,
+    /// Old /var was kept as a mount and is mounted at /var on the new system.
+    #[serde(default)]
+    pub var_mounted: bool,
+    #[serde(default)]
+    pub home_mounted: bool,
+    /// Pretty name of the system that was replaced.
+    #[serde(default)]
+    pub old_os: String,
+    /// Ownership changes applied to migrated data (old id -> new id), so a
+    /// rollback can restore the old ids.
+    #[serde(default)]
+    pub uid_remap: BTreeMap<u32, u32>,
+    #[serde(default)]
+    pub gid_remap: BTreeMap<u32, u32>,
 }
 
 /// Where the new system's /var lives, and how the old data reaches it.
@@ -307,7 +323,7 @@ pub fn var_entry_left_behind(rel: &str) -> bool {
 
 /// rename(2), falling back to a reflink copy + delete when source and
 /// destination are different mounts (e.g. btrfs subvolumes root vs var).
-fn move_path(src: &Path, dst: &Path) -> Result<()> {
+pub fn move_path(src: &Path, dst: &Path) -> Result<()> {
     match fs::rename(src, dst) {
         Ok(()) => Ok(()),
         Err(e) if e.raw_os_error() == Some(18) => {
@@ -856,7 +872,27 @@ pub fn chown_tree(
     n
 }
 
-fn remap_ownership(m: &Manifest, deploy: &Path, var_root: &Path, extra: &[PathBuf]) -> Result<()> {
+/// Ids of migrated data are remapped under these trees; container layer
+/// stores carry their own id spaces and are never touched.
+pub const REMAP_SKIP: &[&str] = &[
+    "lib/containers",
+    "lib/docker",
+    "lib/lxc",
+    "lib/lxd",
+    "lib/machines",
+    "home",
+    "lib/flatpak",
+    "lib/libvirt/images",
+];
+
+type IdMaps = (BTreeMap<u32, u32>, BTreeMap<u32, u32>);
+
+fn remap_ownership(
+    m: &Manifest,
+    deploy: &Path,
+    var_root: &Path,
+    extra: &[PathBuf],
+) -> Result<IdMaps> {
     let r = |p: &str| util::read_opt(root_join(deploy, p)).unwrap_or_default();
     let new_users: Vec<PasswdEntry> = parse_passwd(&r("/usr/lib/passwd"))
         .into_iter()
@@ -869,31 +905,20 @@ fn remap_ownership(m: &Manifest, deploy: &Path, var_root: &Path, extra: &[PathBu
     let uids = id_remap(&m.accounts.all_users, &new_users);
     let gids = gid_remap(&m.accounts.all_groups, &new_groups);
     if uids.is_empty() && gids.is_empty() {
-        return Ok(());
+        return Ok((uids, gids));
     }
     step(format!(
         "remapping ownership of system accounts ({} uids, {} gids differ)",
         uids.len(),
         gids.len()
     ));
-    // Container layer stores carry their own id spaces: never touch them.
-    let skip = [
-        "lib/containers",
-        "lib/docker",
-        "lib/lxc",
-        "lib/lxd",
-        "lib/machines",
-        "home",
-        "lib/flatpak",
-        "lib/libvirt/images",
-    ];
-    let mut n = chown_tree(var_root, &uids, &gids, &skip);
+    let mut n = chown_tree(var_root, &uids, &gids, REMAP_SKIP);
     n += chown_tree(&deploy.join("etc"), &uids, &gids, &[]);
     for e in extra {
-        n += chown_tree(e, &uids, &gids, &skip);
+        n += chown_tree(e, &uids, &gids, REMAP_SKIP);
     }
     info(format!("  {n} files re-owned"));
-    Ok(())
+    Ok((uids, gids))
 }
 
 // ----------------------------------------------------------------- SELinux --
@@ -1075,21 +1100,28 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     enable_units(plan, &deploy)?;
 
     // --- point of no return for the old system: move data ------------------
-    let mut journal = MoveJournal::default();
+    let mut journal = MoveJournal {
+        var_mounted: layout.var_mounted,
+        home_mounted: layout.home_mounted,
+        old_os: m.os.pretty_name.clone(),
+        ..Default::default()
+    };
     move_data(&layout, &mut journal)?;
     install_hooks(plan, &deploy, &layout.new_var, staging)?;
+
+    let mut extra = vec![];
+    if layout.var_mounted {
+        extra.push(PathBuf::from("/var"));
+    }
+    let (uids, gids) = remap_ownership(m, &deploy, &stateroot_var, &extra)?;
+    journal.uid_remap = uids;
+    journal.gid_remap = gids;
     if !util::dry_run() {
         write_file(
             &layout.new_var.join("lib/plexy/moves.json"),
             serde_json::to_string_pretty(&journal)?,
         )?;
     }
-
-    let mut extra = vec![];
-    if layout.var_mounted {
-        extra.push(PathBuf::from("/var"));
-    }
-    remap_ownership(m, &deploy, &stateroot_var, &extra)?;
 
     // SELinux: label /etc always; label /var + home when the source did not
     // use the same policy (cross-family, or SELinux disabled on the source).

@@ -162,7 +162,6 @@ const KARG_DROP_PREFIXES: &[&str] = &[
     "rd.luks.name=",
     "cryptdevice=",
     "systemd.unit=",
-    "console=",
     "no_timer_check",
     "net.ifnames=",
     "biosdevname=",
@@ -305,7 +304,11 @@ mod tests {
             "BOOT_IMAGE=(hd0,gpt2)/vmlinuz-6.9 root=UUID=abc ro rootflags=subvol=root rhgb quiet \
              nvidia-drm.modeset=1 mitigations=off console=ttyS0",
         );
-        assert_eq!(k, vec!["nvidia-drm.modeset=1", "mitigations=off"]);
+        // console= is kept: a serial console is part of the machine's configuration
+        assert_eq!(
+            k,
+            vec!["nvidia-drm.modeset=1", "mitigations=off", "console=ttyS0"]
+        );
     }
 
     #[test]

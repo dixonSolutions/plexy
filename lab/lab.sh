@@ -152,6 +152,23 @@ cmd_screenshot() { # NAME OUT.png
     echo "$2"
 }
 
+cmd_type() { # NAME TEXT   (types TEXT followed by Enter via QMP key events)
+    python3 - "$RUN/$1.qmp" "$2" <<'PYEOF'
+import json, socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.recv(65536)
+s.sendall(b'{"execute":"qmp_capabilities"}\n'); time.sleep(0.2); s.recv(65536)
+names = {" ": "spc", "-": "minus", ".": "dot", "/": "slash", "\n": "ret"}
+def key(*k):
+    keys = [{"type": "qcode", "data": x} for x in k]
+    s.sendall(json.dumps({"execute": "send-key", "arguments": {"keys": keys}}).encode() + b"\n")
+    time.sleep(0.08); s.recv(65536)
+for ch in sys.argv[2] + "\n":
+    if ch.isupper(): key("shift", ch.lower())
+    elif ch in names: key(names[ch])
+    else: key(ch)
+PYEOF
+}
+
 cmd_stop() { # NAME
     local name=$1 i=0
     [[ -f $RUN/$name.pid ]] || return 0
@@ -210,7 +227,7 @@ cmd_list() {
 
 cmd=${1:-}; shift || true
 case $cmd in
-new | start | ssh | scp | wait | screenshot | console | stop | kill | snapshot | revert | rm | list) "cmd_$cmd" "$@" ;;
+new | start | ssh | scp | wait | screenshot | console | type | stop | kill | snapshot | revert | rm | list) "cmd_$cmd" "$@" ;;
 guestfs) guestfs "$@" ;;
 *) sed -n '2,8p' "$0"; echo "commands: new start ssh scp wait screenshot stop kill snapshot revert rm list guestfs"; exit 1 ;;
 esac

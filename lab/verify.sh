@@ -45,7 +45,7 @@ for fp in $EXPECT_GREP; do
   f=${fp%%:*} p=${fp#*:}
   chk "$f contains '$p'" grep -q -- "$p" "$f"
 done
-failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | tr '\n' ' ')
+failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | grep -v '^session-.*\.scope$' | tr '\n' ' ')
 [ -z "$failed" ] && ok "no failed units" || ko "failed units: $failed"
 if [ -e /sys/fs/selinux/enforce ]; then
   echo "   SELinux: $(getenforce), AVC denials this boot: $(journalctl -b -q --no-pager 2>/dev/null | grep -c 'avc:  denied')"

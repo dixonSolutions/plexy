@@ -12,6 +12,7 @@ mod mapping;
 mod os;
 mod pkg;
 mod plan;
+mod rollback;
 mod state;
 mod target;
 mod util;
@@ -132,6 +133,14 @@ enum Cmd {
     Cleanup {
         #[arg(short, long)]
         yes: bool,
+    },
+    /// On the migrated system: go back to the previous OS (reverses data moves,
+    /// restores /boot and the EFI partition from the pre-migration backup).
+    Rollback {
+        #[arg(short, long)]
+        yes: bool,
+        #[arg(long)]
+        reboot: bool,
     },
     /// Re-export toolbox apps and commands to the host.
     Export,
@@ -270,6 +279,7 @@ fn real_main(cli: Cli) -> Result<()> {
         }
         Cmd::Switch { t, yes } => switch(&t, yes)?,
         Cmd::Cleanup { yes } => cleanup(yes)?,
+        Cmd::Rollback { yes, reboot } => rollback::rollback(yes, reboot)?,
         Cmd::Export => {
             let p = plan::load(&Path::new(firstrun::STATE).join("plan.json"))?;
             let tb = p.toolbox.clone().context("plan has no toolbox")?;
