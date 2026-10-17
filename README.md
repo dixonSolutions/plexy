@@ -170,8 +170,9 @@ carried over. SELinux is enforcing, but that boot logged 51 AVC denials: an ext4
 no SELinux labels. No unit failed. The denials have not been looked at one by one.
 
 ³ On a 60 GB disk. Toolbox mode needs room for the old OS (kept for rollback), the new
-deployment and each user's unpacked toolbox at once. On the original 40 GB disk plexy now
-refuses before building, because the space checks count all of these.
+deployment and each user's unpacked toolbox at once. The original 40 GB disk ran out at first
+login. By the current space estimate (19.4 GiB needed, 19.0 free), plexy would refuse that disk
+before building. That is computed, not re-run.
 
 Plexy also refuses to change your desktop: on a GNOME host, `plexy diff --target aurora` (KDE) stops with
 an explanation, and `--target auto` picks a GNOME image
