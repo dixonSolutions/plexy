@@ -173,7 +173,7 @@ if [[ -n ${CUSTOMIZE[$scenario]:-} ]]; then
     printf '%s\n' "${CUSTOMIZE[$scenario]}" | "$L" ssh "$vm" 'cat > /root/extra.Containerfile'
 fi
 if [[ -n ${NOREBOOT[$scenario]:-} ]]; then
-    "$L" ssh "$vm" 'ls -la --time-style=+%s /boot /boot/efi 2>/dev/null | md5sum' >"$LAB/run/$scenario.boot.before"
+    "$L" ssh "$vm" 'find /boot /boot/efi -xdev -printf "%p %s %T@\\n" 2>/dev/null | sort | md5sum' >"$LAB/run/$scenario.boot.before"
 fi
 cmd=${CMD[$scenario]:-"plexy migrate ${ARGS[$scenario]:-} --yes --reboot"}
 port=$(cat "$LAB/run/$vm.port")
@@ -191,7 +191,7 @@ if [[ -n ${NOREBOOT[$scenario]:-} ]]; then
     out="$LAB/run/$scenario.check.log"
     {
         "$L" ssh "$vm" '. /etc/os-release; echo "os: $PRETTY_NAME"; test -e /ostree && echo "FAIL /ostree exists" || echo "PASS no /ostree"'
-        "$L" ssh "$vm" 'ls -la --time-style=+%s /boot /boot/efi 2>/dev/null | md5sum' | cmp -s - "$LAB/run/$scenario.boot.before" &&
+        "$L" ssh "$vm" 'find /boot /boot/efi -xdev -printf "%p %s %T@\\n" 2>/dev/null | sort | md5sum' | cmp -s - "$LAB/run/$scenario.boot.before" &&
             echo "PASS /boot unchanged" || echo "FAIL /boot changed"
         if [[ -n ${EXPECT_OUTPUT[$scenario]:-} ]]; then
             grep -qa "${EXPECT_OUTPUT[$scenario]}" "$HERE/../demos/$scenario.cast" 2>/dev/null &&
