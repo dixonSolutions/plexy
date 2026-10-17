@@ -55,11 +55,17 @@ EXPECT_FILES="/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop t
 EXPECT_ACTIVE="nginx.service sshd.service chronyd.service"'
 
 vm=${VM[$scenario]:?unknown scenario}
+# Power the guest off when the scenario ends (pass, fail or Ctrl-C). A guest
+# left running after its scenario keeps its full RAM pinned; three of them plus
+# the host workload once OOM-killed the whole desktop. KEEP=1 leaves it up.
+[[ ${KEEP:-} == 1 ]] || trap '"$L" stop "$vm" >/dev/null 2>&1 || "$L" kill "$vm" || true' EXIT
 L_VERIFY() { "$L" scp "$vm" "$HERE/verify.sh" :/root/verify.sh
     "$L" ssh "$vm" "env ${EXPECT[$scenario]//$'\n'/ } sh /root/verify.sh" | tee "$LAB/run/$scenario.verify.log"; }
 
 # fedora-rollback: run on an already-migrated fed1: roll back, reboot, verify the old system.
 if [[ $scenario == fedora-rollback ]]; then
+    # The previous scenario powered the migrated guest off; boot it again.
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
     "$L" ssh "$vm" 'mkdir -p /var/mnt/host; mountpoint -q /var/mnt/host || mount -t 9p -o trans=virtio,version=9p2000.L hostshare /var/mnt/host; /var/mnt/host/plexy rollback --yes --reboot' || true
     sleep 30
     "$L" wait "$vm" 600

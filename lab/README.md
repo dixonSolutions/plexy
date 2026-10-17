@@ -36,7 +36,27 @@ lab.sh screenshot NAME out.png     # QMP screendump
 lab.sh stop|kill NAME
 lab.sh snapshot|revert NAME TAG    # qcow2 internal snapshots (guest stopped)
 lab.sh rm NAME
+lab.sh mem                         # RSS of running guests and host headroom
 ```
+
+## Memory budget
+
+QEMU keeps every page of guest RAM the guest has touched, and a migration touches all of it
+(image pulls, `podman build`, page cache). Treat each running guest as costing its full `MEM`
+(default 6 GiB) plus ~0.5 GiB.
+
+On 2026-10-17 three guests (one left running after its scenario had finished) plus the host's
+other work (dev servers, a browser, 17 GB of RAM-backed `/tmp`) exhausted 62 GiB RAM and 8 GiB
+swap. The kernel OOM-killed a guest mid-migration and several desktop apps. So:
+
+- `lab.sh start` refuses to start a guest unless the host keeps `RESERVE_MB` (default 12 GiB)
+  available afterwards, and at most `MAX_VMS` (default 2) guests run at once. `LAB_NO_MEMORY_GUARD=1`
+  overrides the check; do not use it to run scenarios in parallel.
+- Guests get `virtio-balloon` with free-page reporting, so memory the guest frees goes back to
+  the host. qemu runs with `oom_score_adj=1000`, so under memory pressure a guest is killed first.
+- `e2e.sh` powers its guest off when the scenario ends, even when it fails. `KEEP=1` leaves the guest running.
+- Run scenarios **one at a time**. Check `lab.sh mem` and `free -h` before you start one. On hosts where
+  `/tmp` is tmpfs, never put build trees or VM images in `/tmp`.
 
 ## Scenarios
 

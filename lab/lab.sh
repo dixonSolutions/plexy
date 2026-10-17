@@ -16,6 +16,11 @@ QEMU=${QEMU:-qemu-system-x86_64}
 MEM=${MEM:-6144}
 CPUS=${CPUS:-4}
 DISK_SIZE=${DISK_SIZE:-40G}
+# Host memory guard (see "Memory budget" in lab/README.md). A guest is not
+# started unless the host keeps RESERVE_MB available afterwards, and at most
+# MAX_VMS lab guests run at once.
+RESERVE_MB=${RESERVE_MB:-12288}
+MAX_VMS=${MAX_VMS:-2}
 
 mkdir -p "$RUN" "$LAB/share"
 [[ -f $KEY ]] || ssh-keygen -q -t ed25519 -N '' -f "$KEY" -C plexy-lab
@@ -40,6 +45,37 @@ vars_template() {
 }
 
 port_of() { cat "$RUN/$1.port"; }
+
+running_vms() { # names of lab guests whose qemu is alive
+    local p n
+    for p in "$RUN"/*.pid; do
+        [[ -e $p ]] || continue
+        n=$(basename "$p" .pid)
+        if kill -0 "$(cat "$p")" 2>/dev/null; then echo "$n"; else rm -f "$p"; fi
+    done
+}
+
+# Refuse to start a guest that would push the host into swap/OOM. QEMU pins
+# guest RAM it has touched, so a running guest costs its full -m sooner or
+# later; we reserve that up front instead of discovering it at OOM time.
+memory_guard() { # NAME
+    [[ ${LAB_NO_MEMORY_GUARD:-} == 1 ]] && return 0
+    local running avail need
+    mapfile -t running < <(running_vms)
+    if ((${#running[@]} >= MAX_VMS)); then
+        echo "refusing to start $1: ${#running[@]} lab guest(s) already running (${running[*]}), MAX_VMS=$MAX_VMS." >&2
+        echo "stop one first: lab.sh stop NAME" >&2
+        return 1
+    fi
+    avail=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo)
+    need=$((MEM + 512 + RESERVE_MB))
+    if ((avail < need)); then
+        echo "refusing to start $1: host has ${avail} MiB available, needs ${need} MiB" >&2
+        echo "(MEM=$MEM + 512 qemu overhead + RESERVE_MB=$RESERVE_MB). Running guests: ${running[*]:-none}." >&2
+        echo "Free memory (stop guests, clear tmpfs /tmp) or lower MEM; LAB_NO_MEMORY_GUARD=1 overrides." >&2
+        return 1
+    fi
+}
 
 guestfs() {
     podman run --rm -i --device /dev/kvm -v "$LAB:$LAB:z" -w "$LAB" "$GUESTFS_IMG" "$@"
@@ -96,6 +132,7 @@ cmd_start() { # NAME [extra qemu args...]
     local name=$1; shift
     local seed=() fw=() port
     port=$(port_of "$name")
+    memory_guard "$name"
     if [[ ${FIRMWARE:-uefi} == uefi ]]; then
         fw=(-drive "if=pflash,format=raw,readonly=on,file=$(firmware)" -drive "if=pflash,format=raw,file=$RUN/$name.vars.fd")
     fi
@@ -107,13 +144,17 @@ cmd_start() { # NAME [extra qemu args...]
         "${seed[@]}" \
         -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$port-:22" -device virtio-net-pci,netdev=n0 \
         -device virtio-rng-pci -device virtio-vga \
+        -device virtio-balloon-pci,free-page-reporting=on,deflate-on-oom=on \
         -virtfs "local,path=$LAB/share,mount_tag=hostshare,security_model=none,readonly=on,id=fs0" \
         -display none -vnc "unix:$RUN/$name.vnc" \
         -qmp "unix:$RUN/$name.qmp,server,nowait" \
         -chardev "socket,id=ser0,path=$RUN/$name.serial.sock,server=on,wait=off,logfile=$RUN/$name.serial.log,logappend=on" \
         -serial chardev:ser0 \
         -pidfile "$RUN/$name.pid" -daemonize "$@"
-    echo "started $name"
+    # If the host does run out of memory, the kernel kills a lab guest first,
+    # not the desktop session or the agent driving the lab.
+    echo 1000 >"/proc/$(cat "$RUN/$name.pid")/oom_score_adj" 2>/dev/null || true
+    echo "started $name (${MEM} MiB)"
 }
 
 cmd_ssh() { # NAME [cmd...]  (user root)
@@ -215,6 +256,16 @@ cmd_revert() { qemu-img snapshot -a "$2" "$RUN/$1.qcow2"; }     # NAME TAG  (VM 
 
 cmd_rm() { cmd_kill "$1" || true; rm -rf "$RUN/$1".*; echo "removed $1"; }
 
+cmd_mem() { # running guests and host headroom
+    local n total=0 rss
+    for n in $(running_vms); do
+        rss=$(awk '/^VmRSS:/{print int($2/1024)}' "/proc/$(cat "$RUN/$n.pid")/status")
+        printf '%-24s rss=%s MiB\n' "$n" "$rss"; total=$((total + rss))
+    done
+    printf 'lab guests total %s MiB; host MemAvailable %s MiB; reserve %s MiB; MAX_VMS %s\n' "$total" \
+        "$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo)" "$RESERVE_MB" "$MAX_VMS"
+}
+
 cmd_list() {
     for p in "$RUN"/*.port; do
         [[ -e $p ]] || continue
@@ -227,7 +278,7 @@ cmd_list() {
 
 cmd=${1:-}; shift || true
 case $cmd in
-new | start | ssh | scp | wait | screenshot | console | type | stop | kill | snapshot | revert | rm | list) "cmd_$cmd" "$@" ;;
+new | start | ssh | scp | wait | screenshot | console | type | stop | kill | snapshot | revert | rm | list | mem) "cmd_$cmd" "$@" ;;
 guestfs) guestfs "$@" ;;
-*) sed -n '2,8p' "$0"; echo "commands: new start ssh scp wait screenshot stop kill snapshot revert rm list guestfs"; exit 1 ;;
+*) sed -n '2,8p' "$0"; echo "commands: new start ssh scp wait screenshot stop kill snapshot revert rm list mem guestfs"; exit 1 ;;
 esac
