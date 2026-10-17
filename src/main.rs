@@ -59,6 +59,10 @@ struct TargetArgs {
     /// the target (toolbox mode always does).
     #[arg(long)]
     include_preinstalled: bool,
+    /// Containerfile snippet appended to the derived system image (extra
+    /// packages, files, RUN steps) — your own adjustments to the target.
+    #[arg(long, value_name = "FILE")]
+    customize: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -237,7 +241,7 @@ fn real_main(cli: Cli) -> Result<()> {
             let (name, facts) = choose_target(&m, &t.target)?;
             let mut p = make_plan(&m, &facts, name, &t)?;
             review_or_print(&mut p, yes)?;
-            write_plan_dir(&m, &p, &out)?;
+            write_plan_dir(&m, &p, &out, t.customize.as_deref())?;
         }
         Cmd::Build { plan: dir } => {
             let p = plan::load(&dir.join("plan.json"))?;
@@ -272,7 +276,7 @@ fn real_main(cli: Cli) -> Result<()> {
             let mut p = make_plan(&m, &facts, name, &t)?;
             review_or_print(&mut p, yes)?;
             let dir = PathBuf::from("/var/lib/plexy/plan");
-            write_plan_dir(&m, &p, &dir)?;
+            write_plan_dir(&m, &p, &dir, t.customize.as_deref())?;
             build_all(&p, &dir)?;
             confirm_destructive(&p, yes)?;
             do_apply(&m, &p, &dir, reboot, allow_esp_wipe, abroot_disk)?;
@@ -684,11 +688,28 @@ fn load_brew_index() -> BTreeMap<String, String> {
     mapping::parse_brew_index(&fs::read_to_string(&cache).unwrap_or_default())
 }
 
-fn write_plan_dir(m: &manifest::Manifest, p: &plan::Plan, dir: &Path) -> Result<()> {
+fn write_plan_dir(
+    m: &manifest::Manifest,
+    p: &plan::Plan,
+    dir: &Path,
+    customize: Option<&Path>,
+) -> Result<()> {
     fs::create_dir_all(dir)?;
     util::write_file(&dir.join("manifest.json"), serde_json::to_string_pretty(m)?)?;
     plan::save(p, &dir.join("plan.json"))?;
-    build::system_containerfile(m, p, &dir.join("system"))?;
+    let cf = build::system_containerfile(m, p, &dir.join("system"))?;
+    if let Some(extra) = customize {
+        let snippet =
+            fs::read_to_string(extra).with_context(|| format!("reading {}", extra.display()))?;
+        let mut text = fs::read_to_string(&cf)?;
+        text.push_str(&format!(
+            "\n# --- customisations from {} ---\n{}\n",
+            extra.display(),
+            snippet.trim_end()
+        ));
+        util::write_file(&cf, text)?;
+        info(format!("appended {} to the derived image", extra.display()));
+    }
     build::toolbox_containerfile(m, p, &dir.join("toolbox"))?;
     info(format!(
         "review or edit {}/{{plan.json,system/Containerfile,toolbox/Containerfile}}",
@@ -821,7 +842,7 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
     let mut p = make_plan(&m, &facts, name, t)?;
     review_or_print(&mut p, yes)?;
     let dir = PathBuf::from("/var/lib/plexy/plan");
-    write_plan_dir(&m, &p, &dir)?;
+    write_plan_dir(&m, &p, &dir, t.customize.as_deref())?;
     build_all(&p, &dir)?;
     confirm_destructive(&p, yes)?;
     // On an image-based host /etc and /var already survive a switch (3-way merge).

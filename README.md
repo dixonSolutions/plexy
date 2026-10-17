@@ -122,7 +122,10 @@ of your old distro), `brew` (CLI tools to Homebrew), `hybrid` (host-level → im
 GUI/rest → toolbox). `--include-preinstalled` migrates software your old OS shipped that the
 target lacks in any mode.
 
-Any image works as a target: `--target ghcr.io/you/your-image:latest`.
+Any image works as a target: `--target ghcr.io/you/your-image:latest`. To adjust the image
+Plexy builds, edit `/var/lib/plexy/plan/system/Containerfile` between `plexy plan` and
+`plexy build`, or pass a snippet: `--customize extra.Containerfile` (e.g.
+`RUN dnf -y install tailscale && systemctl enable tailscaled`).
 
 ## Building
 
