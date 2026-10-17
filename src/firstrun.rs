@@ -120,17 +120,35 @@ fn notify(summary: &str, body: &str) {
 }
 
 pub fn firstlogin() -> Result<()> {
+    // The unit has ConditionUser=!@system; this also covers units written by
+    // older plexy versions. Root's toolbox would only take space users need.
+    if util::is_root() {
+        info("first login setup is for regular users; skipped for root");
+        return Ok(());
+    }
     let plan = load_plan()?;
     let state = home().join(".local/state/plexy");
     fs::create_dir_all(&state)?;
     let mut done = vec![];
+    let mut retry = false;
 
     if let Some(tb) = &plan.toolbox {
         match setup_toolbox(&plan, tb) {
             Ok(n) => done.push(format!("toolbox '{}' ready ({n} exports)", tb.name)),
             Err(e) => {
                 warn(format!("toolbox setup failed: {e:#}"));
-                done.push(format!("toolbox setup failed: {e}"));
+                retry = true;
+                if format!("{e:#}").contains("no space left on device") {
+                    done.push(
+                        "toolbox setup failed: the disk is full. Once the new system works, run \
+                         `sudo plexy cleanup` to remove the old one, then log out and back in."
+                            .into(),
+                    );
+                } else {
+                    done.push(format!(
+                        "toolbox setup failed (will retry at next login): {e}"
+                    ));
+                }
             }
         }
     }
@@ -143,7 +161,10 @@ pub fn firstlogin() -> Result<()> {
         }
     }
     write_file(&state.join("firstlogin.log"), done.join("\n") + "\n")?;
-    write_file(&state.join("firstlogin.done"), util::now_unix().to_string())?;
+    // Without the done marker the user service runs again at the next login.
+    if !retry {
+        write_file(&state.join("firstlogin.done"), util::now_unix().to_string())?;
+    }
     if !done.is_empty() {
         notify("Your software has been migrated", &done.join("\n"));
     }

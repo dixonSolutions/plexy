@@ -103,35 +103,62 @@ pub fn preflight(m: &Manifest, opts: &ApplyOpts) -> Result<()> {
             "root is on LUKS: Debian-family systems unlock it from crypttab in the initramfs; plexy adds rd.luks.uuid= so the new initramfs can unlock it",
         );
     }
+    let archive = fs::metadata("/var/lib/plexy/staging/toolbox.tar").map_or(0, |m| m.len());
+    let unpacked = fs::read_to_string(TOOLBOX_SIZE_FILE)
+        .ok()
+        .and_then(|s| s.trim().parse().ok());
+    let toolbox = if archive > 0 {
+        toolbox_unpack_room(unpacked, archive)
+    } else {
+        0
+    };
     require_free_root(
-        deploy_room(image_size(&opts.image)),
-        "the new system image needs room next to the old one",
+        deploy_room(image_size(&opts.image)) + toolbox,
+        "the new system image needs room next to the old one, and first login unpacks the toolbox",
     )
 }
 
 const GIB: u64 = 1024 * 1024 * 1024;
 /// Room `bootc install to-existing-root` needs on / for the new deployment.
 pub const MIN_FREE_FOR_IMAGE: u64 = 12 * GIB;
-/// Extra room a toolbox build needs while it runs: the built image plus its
-/// `podman save` archive, before the image is removed again.
-pub const TOOLBOX_BUILD_HEADROOM: u64 = 4 * GIB;
+/// Room a toolbox needs per package routed to it: its unpacked image plus
+/// the compressed archive. Measured: 506 Ultramarine packages unpacked to
+/// 5.4 GB with a 2.0 GB archive, about 14.5 MB per package.
+pub const TOOLBOX_PER_PACKAGE: u64 = 16 * 1024 * 1024;
+pub const TOOLBOX_MIN_ROOM: u64 = 4 * GIB;
 
-/// Room the ostree deployment of an image needs on /: about its unpacked
-/// size again (plus 20 %), never less than [`MIN_FREE_FOR_IMAGE`].
+/// Room the ostree deployment of an image needs on /. Measured: a 7.4 GB
+/// Bluefin image became a 6.8 GB ostree repo, so 1.1x its size leaves some
+/// margin; never less than [`MIN_FREE_FOR_IMAGE`].
 pub fn deploy_room(image_bytes: Option<u64>) -> u64 {
-    image_bytes.map_or(MIN_FREE_FOR_IMAGE, |b| (b + b / 5).max(MIN_FREE_FOR_IMAGE))
+    image_bytes.map_or(MIN_FREE_FOR_IMAGE, |b| {
+        (b * 11 / 10).max(MIN_FREE_FOR_IMAGE)
+    })
+}
+
+/// Unpacked size of the toolbox image, recorded by `plexy build` before the
+/// image is removed from container storage (the archive is compressed).
+pub const TOOLBOX_SIZE_FILE: &str = "/var/lib/plexy/staging/toolbox.size";
+
+/// Room each user's first login needs: the unpacked toolbox image plus 30 %
+/// for the container distrobox creates from it. Without a recorded size,
+/// assume 3x the gzip archive (measured 2.7x). Measured end to end: 5.4 GB
+/// image, 7.3 GB used once the container was up.
+pub fn toolbox_unpack_room(unpacked: Option<u64>, archive_bytes: u64) -> u64 {
+    let u = unpacked.unwrap_or(archive_bytes * 3);
+    u + u * 3 / 10
 }
 
 /// Free space on / needed before building, so a migration that cannot fit
 /// fails in seconds instead of after a long image build. `target_bytes` is
-/// the size of the target image when it is already in container storage.
-pub fn required_free_before_build(target_bytes: Option<u64>, has_toolbox: bool) -> u64 {
-    deploy_room(target_bytes)
-        + if has_toolbox {
-            TOOLBOX_BUILD_HEADROOM
-        } else {
-            0
-        }
+/// the size of the target image when it is already in container storage;
+/// `toolbox_pkgs` the number of packages going into a toolbox (0: none).
+pub fn required_free_before_build(target_bytes: Option<u64>, toolbox_pkgs: usize) -> u64 {
+    let toolbox = match toolbox_pkgs {
+        0 => 0,
+        n => (n as u64 * TOOLBOX_PER_PACKAGE).max(TOOLBOX_MIN_ROOM),
+    };
+    deploy_room(target_bytes) + toolbox
 }
 
 /// Unpacked size of an image in local container storage, if it is there.
@@ -1102,6 +1129,7 @@ WantedBy=multi-user.target
 pub const FIRSTLOGIN_UNIT: &str = "[Unit]
 Description=Plexy: restore your toolbox, Homebrew tools and apps
 ConditionPathExists=!%h/.local/state/plexy/firstlogin.done
+ConditionUser=!@system
 After=graphical-session.target
 
 [Service]
@@ -1336,9 +1364,12 @@ mod tests {
         let g = 1024 * 1024 * 1024u64;
         assert_eq!(deploy_room(None), MIN_FREE_FOR_IMAGE);
         assert_eq!(deploy_room(Some(4 * g)), MIN_FREE_FOR_IMAGE);
-        assert_eq!(deploy_room(Some(15 * g)), 18 * g);
-        assert_eq!(required_free_before_build(None, true), 16 * g);
-        assert_eq!(required_free_before_build(Some(15 * g), false), 18 * g);
+        assert_eq!(deploy_room(Some(20 * g)), 22 * g);
+        assert_eq!(required_free_before_build(None, 10), 16 * g);
+        assert_eq!(required_free_before_build(None, 512), 20 * g);
+        assert_eq!(required_free_before_build(Some(20 * g), 0), 22 * g);
+        assert_eq!(toolbox_unpack_room(None, 10 * g), 39 * g);
+        assert_eq!(toolbox_unpack_room(Some(10 * g), 2 * g), 13 * g);
     }
 
     use super::*;

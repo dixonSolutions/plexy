@@ -282,7 +282,11 @@ fn real_main(cli: Cli) -> Result<()> {
                 apply::require_free_root(
                     apply::required_free_before_build(
                         apply::image_size(&p.target_image),
-                        p.toolbox.is_some(),
+                        if p.toolbox.is_some() {
+                            p.names_for(plan::Dest::Toolbox).len()
+                        } else {
+                            0
+                        },
                     ),
                     "building the images and installing the new system next to the old one",
                 )?;
@@ -765,7 +769,10 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
             &[
                 "save",
                 "--format",
-                "oci-archive",
+                // docker-archive loads by streaming; oci-archive is first
+                // unpacked to /var/tmp, and podman leaves that copy behind
+                // when a load fails.
+                "docker-archive",
                 "-o",
                 &archive.display().to_string(),
                 &tb.image_tag,
@@ -774,6 +781,9 @@ fn build_all(p: &plan::Plan, dir: &Path) -> Result<()> {
         // First login loads the toolbox from the archive. Keeping the image in
         // container storage as well doubles its footprint on /, which is the
         // room the new deployment needs.
+        if let Some(size) = apply::image_size(&tb.image_tag) {
+            fs::write(apply::TOOLBOX_SIZE_FILE, size.to_string())?;
+        }
         let _ = util::try_run("podman", &["rmi", &tb.image_tag]);
         if !base_was_present {
             let _ = util::try_run("podman", &["rmi", &tb.base_image]);
