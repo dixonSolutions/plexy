@@ -10,16 +10,20 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static VERBOSE: AtomicBool = AtomicBool::new(false);
-static DRY_RUN: AtomicBool = AtomicBool::new(false);
+// Thread-local so tests can exercise dry-run paths without racing each other
+// (the program itself is single-threaded).
+thread_local! {
+    static DRY_RUN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 pub fn set_verbose(v: bool) {
     VERBOSE.store(v, Ordering::Relaxed);
 }
 pub fn set_dry_run(v: bool) {
-    DRY_RUN.store(v, Ordering::Relaxed);
+    DRY_RUN.with(|d| d.set(v));
 }
 pub fn dry_run() -> bool {
-    DRY_RUN.load(Ordering::Relaxed)
+    DRY_RUN.with(|d| d.get())
 }
 
 pub fn info(msg: impl AsRef<str>) {

@@ -459,12 +459,13 @@ pub fn move_path(src: &Path, dst: &Path) -> Result<()> {
 /// Renames when possible, so user data is normally never copied.
 fn merge_move(src: &Path, dst: &Path, journal: &mut MoveJournal) -> Result<()> {
     if fs::symlink_metadata(dst).is_err() {
-        if let Some(p) = dst.parent() {
-            fs::create_dir_all(p)?;
-        }
+        // dry-run first: not even the parent directories may be created
         if util::dry_run() {
             info(format!("[dry-run] mv {} {}", src.display(), dst.display()));
             return Ok(());
+        }
+        if let Some(p) = dst.parent() {
+            fs::create_dir_all(p)?;
         }
         move_path(src, dst)?;
         journal
@@ -832,16 +833,49 @@ fn write_accounts(m: &Manifest, plan: &Plan, deploy: &Path) -> Result<()> {
 /// A config that is a symlink whose target does not exist in the new root
 /// (e.g. Ubuntu's /etc/modprobe.d/blacklist-oss.conf pointing into a package
 /// the target lacks). Copying it would leave a dangling link that tools trip on.
-pub fn dangling_in_new_root(src: &Path, dst: &Path, root: &Path) -> bool {
+/// A link whose target is itself among the files being carried (`carried`:
+/// absolute paths as they will appear in the new system) is not dangling,
+/// whatever order the files are copied in
+/// (/etc/nginx/sites-enabled/default -> ../sites-available/default). When the
+/// new root does not exist yet (--dry-run), links are not judged at all.
+pub fn dangling_after_copy(
+    src: &Path,
+    dst: &Path,
+    root: &Path,
+    carried: &BTreeSet<String>,
+) -> bool {
     let Ok(target) = fs::read_link(src) else {
         return false;
     };
-    let resolved = if target.is_absolute() {
-        root_join(root, target.display().to_string())
+    if !root.exists() {
+        return false;
+    }
+    let in_new = if target.is_absolute() {
+        normalize(&target)
     } else {
-        dst.parent().unwrap_or(root).join(&target)
+        let rel_dst = Path::new("/").join(dst.strip_prefix(root).unwrap_or(dst));
+        normalize(&rel_dst.parent().unwrap_or(Path::new("/")).join(&target))
     };
-    fs::symlink_metadata(&resolved).is_err()
+    if carried.contains(&in_new.display().to_string()) {
+        return false;
+    }
+    fs::symlink_metadata(root_join(root, in_new.display().to_string())).is_err()
+}
+
+/// Lexical normalisation ("." and ".." removed) of an absolute path; the
+/// path may not exist yet.
+pub fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::from("/");
+    for c in p.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::Normal(n) => out.push(n),
+            _ => {}
+        }
+    }
+    out
 }
 
 pub fn copy_preserving(src: &Path, dst: &Path) -> Result<()> {
@@ -860,9 +894,19 @@ pub fn copy_preserving(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The /etc paths (as the new system names them) that the plan carries over.
+pub fn carried_paths(plan: &Plan) -> BTreeSet<String> {
+    plan.configs
+        .iter()
+        .filter(|c| matches!(c.action, ConfigAction::Etc | ConfigAction::Brew))
+        .map(|c| etc_translate(&c.path, plan.source_family, plan.target_family))
+        .collect()
+}
+
 fn write_configs(plan: &Plan, deploy: &Path, staging: &Path) -> Result<Vec<String>> {
     step("carrying configuration into the new /etc");
     let mut written = vec![];
+    let carried = carried_paths(plan);
     for c in &plan.configs {
         if !matches!(c.action, ConfigAction::Etc | ConfigAction::Brew) {
             continue;
@@ -873,7 +917,7 @@ fn write_configs(plan: &Plan, deploy: &Path, staging: &Path) -> Result<Vec<Strin
         }
         let dst_path = etc_translate(&c.path, plan.source_family, plan.target_family);
         let dst = root_join(deploy, &dst_path);
-        if dangling_in_new_root(src, &dst, deploy) {
+        if dangling_after_copy(src, &dst, deploy, &carried) {
             info(format!(
                 "  skipping {}: its link target is not in the new system",
                 c.path
@@ -1592,6 +1636,57 @@ mod tests {
         assert!(!src.join("lib/nginx").exists());
         assert_eq!(j.moves.len(), 2);
         fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn dry_run_merge_move_creates_nothing() {
+        let t = std::env::temp_dir().join(format!("plexy-dry-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        fs::create_dir_all(t.join("old/home/bob")).unwrap();
+        util::set_dry_run(true);
+        let mut j = MoveJournal::default();
+        merge_move(&t.join("old/home/bob"), &t.join("new/var/home/bob"), &mut j).unwrap();
+        util::set_dry_run(false);
+        assert!(!t.join("new").exists(), "dry-run created directories");
+        assert!(t.join("old/home/bob").exists());
+        assert!(j.moves.is_empty());
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn links_to_carried_configs_are_not_dangling() {
+        let t = std::env::temp_dir().join(format!("plexy-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        let (old, new) = (t.join("old/etc/nginx"), t.join("new"));
+        fs::create_dir_all(old.join("sites-enabled")).unwrap();
+        fs::create_dir_all(old.join("sites-available")).unwrap();
+        fs::create_dir_all(&new).unwrap();
+        fs::write(old.join("sites-available/default"), "server {}").unwrap();
+        let link = old.join("sites-enabled/default");
+        std::os::unix::fs::symlink("../sites-available/default", &link).unwrap();
+        let dst = new.join("etc/nginx/sites-enabled/default");
+        // target not copied yet and not carried: dangling
+        assert!(dangling_after_copy(&link, &dst, &new, &BTreeSet::new()));
+        // target carried by the plan: fine regardless of copy order
+        let carried: BTreeSet<String> = ["/etc/nginx/sites-available/default".to_string()].into();
+        assert!(!dangling_after_copy(&link, &dst, &new, &carried));
+        // dry-run: the new root does not exist, links are not judged
+        assert!(!dangling_after_copy(
+            &link,
+            &dst,
+            &t.join("missing"),
+            &BTreeSet::new()
+        ));
+        fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn lexical_normalisation() {
+        assert_eq!(
+            normalize(Path::new("/etc/nginx/sites-enabled/../sites-available/x")),
+            PathBuf::from("/etc/nginx/sites-available/x")
+        );
+        assert_eq!(normalize(Path::new("/a/./b/../../c")), PathBuf::from("/c"));
     }
 
     #[test]

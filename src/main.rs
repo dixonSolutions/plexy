@@ -1044,11 +1044,13 @@ fn do_apply(
 ) -> Result<()> {
     let staging = PathBuf::from("/var/lib/plexy/staging");
     // The build contexts travel with the system so updates can rebuild them.
-    let _ = fs::create_dir_all(&staging);
+    if !util::dry_run() {
+        let _ = fs::create_dir_all(&staging);
+    }
     match p.backend {
         target::Backend::Bootc => {
             let derived = uses_derived(p, dir);
-            if derived {
+            if derived && !util::dry_run() {
                 let _ = util::run(
                     "cp",
                     &[

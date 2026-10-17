@@ -676,6 +676,7 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
     let gdm_reads_daemon_conf =
         a.join("etc/gdm3/daemon.conf").exists() && !a.join("etc/gdm3/custom.conf").exists();
     let mut n = 0;
+    let carried = apply::carried_paths(plan);
     for c in plan
         .configs
         .iter()
@@ -686,7 +687,7 @@ pub fn apply(m: &Manifest, plan: &Plan, disk: Option<&str>, reboot: bool) -> Res
             etc_translate(&c.path, plan.source_family, plan.target_family),
         );
         if fs::symlink_metadata(&c.path).is_ok()
-            && !apply::dangling_in_new_root(Path::new(&c.path), &dst, &a)
+            && !apply::dangling_after_copy(Path::new(&c.path), &dst, &a, &carried)
             && apply::copy_preserving(Path::new(&c.path), &dst).is_ok()
         {
             n += 1;
@@ -946,7 +947,14 @@ mod tests {
         std::os::unix::fs::symlink("/lib/gone/noOSS.conf", old.join("a.conf")).unwrap();
         std::os::unix::fs::symlink("/usr/share/real.conf", old.join("b.conf")).unwrap();
         fs::write(old.join("c.conf"), "plain").unwrap();
-        let d = |n: &str| apply::dangling_in_new_root(&old.join(n), &new.join("etc").join(n), &new);
+        let d = |n: &str| {
+            apply::dangling_after_copy(
+                &old.join(n),
+                &new.join("etc").join(n),
+                &new,
+                &Default::default(),
+            )
+        };
         assert!(d("a.conf"));
         assert!(!d("b.conf"));
         assert!(!d("c.conf"));
