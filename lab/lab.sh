@@ -214,7 +214,7 @@ cmd_stop() { # NAME
     local name=$1 i=0
     [[ -f $RUN/$name.pid ]] || return 0
     cmd_ssh "$name" 'systemctl poweroff' 2>/dev/null || qmp "$name" '{"execute":"system_powerdown"}'
-    while kill -0 "$(cat "$RUN/$name.pid")" 2>/dev/null; do
+    while kill -0 "$(cat "$RUN/$name.pid" 2>/dev/null)" 2>/dev/null; do
         sleep 2; i=$((i + 2))
         ((i < 120)) || { kill "$(cat "$RUN/$name.pid")"; break; }
     done
