@@ -14,7 +14,7 @@ L="$HERE/lab.sh"
 scenario=${1:?scenario}
 record=${2:-}
 
-declare -A VM ARGS EXPECT SNAP
+declare -A VM ARGS EXPECT SNAP CMD CUSTOMIZE NOREBOOT EXPECT_OUTPUT
 VM[fedora-silverblue]=fed1
 ARGS[fedora-silverblue]="--target silverblue --mode image"
 EXPECT[fedora-silverblue]='EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
@@ -55,6 +55,30 @@ EXPECT[debian-bluefin]='EXPECT_STARTUSER=tester EXPECT_WAITFILE=/var/home/tester
 EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="nginx htop tmux"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 
+# fedora-split: plan -> build -> apply as separate commands, with --customize.
+VM[fedora-split]=fed1
+CUSTOMIZE[fedora-split]='RUN echo plexy-custom > /etc/plexy-custom-marker'
+CMD[fedora-split]="plexy plan --target silverblue --mode image --customize /root/extra.Containerfile --yes && plexy build && plexy apply --yes --reboot"
+EXPECT[fedora-split]='EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf /etc/plexy-custom-marker" EXPECT_CMDS="htop tmux nginx"
+EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/plexy-custom-marker:plexy-custom"'
+
+# debian-dryrun: --dry-run must change nothing.
+VM[debian-dryrun]=deb1
+CMD[debian-dryrun]="plexy --dry-run migrate --target bluefin --mode hybrid --yes --reboot"
+NOREBOOT[debian-dryrun]=1
+
+# ultra40-refusal: the original 40 GB Ultramarine disk is too small for toolbox
+# mode; plexy must refuse before building and leave the system as it was.
+VM[ultra40-refusal]=ultra40
+CMD[ultra40-refusal]="plexy migrate --target bluefin --mode toolbox --yes --reboot"
+NOREBOOT[ultra40-refusal]=1
+EXPECT_OUTPUT[ultra40-refusal]='GiB needed'
+
+# debian-cleanup / ultramarine-export: run on the migrated guests.
+VM[debian-cleanup]=deb1
+VM[ultramarine-export]=ultra1
+
 # silverblue-bluefin: run right after fedora-silverblue. Starts from an
 # image-based OS and moves it to another image with `plexy switch`.
 VM[silverblue-bluefin]=fed1
@@ -77,6 +101,28 @@ L_VERIFY() { "$L" scp "$vm" "$HERE/verify.sh" :/root/verify.sh
     "$L" ssh "$vm" "env ${EXPECT[$scenario]//$'\n'/ } sh /root/verify.sh" | tee "$LAB/run/$scenario.verify.log"; }
 
 # fedora-rollback: run on an already-migrated fed1: roll back, reboot, verify the old system.
+if [[ $scenario == debian-cleanup ]]; then
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'test -e /run/ostree-booted' || { echo "$vm is not migrated: run debian-bluefin first" >&2; exit 1; }
+    "$L" ssh "$vm" 'plexy cleanup --yes' | tail -5
+    "$L" ssh "$vm" 'for d in usr etc bin lib opt srv; do [ -e /sysroot/$d ] && echo "LEFT /sysroot/$d"; done; true' | tee "$LAB/run/$scenario.left.log"
+    grep -q LEFT "$LAB/run/$scenario.left.log" && { echo "cleanup left old files behind" >&2; exit 1; }
+    "$L" ssh "$vm" 'systemctl reboot' || true
+    sleep 30
+    "$L" wait "$vm" 900
+    EXPECT[$scenario]=${EXPECT[debian-bluefin]}
+    L_VERIFY
+    exit
+fi
+if [[ $scenario == ultramarine-export ]]; then
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'test -e /run/ostree-booted' || { echo "$vm is not migrated: run ultramarine-bluefin-toolbox first" >&2; exit 1; }
+    "$L" ssh "$vm" 'rm -f /var/home/alice/.local/bin/rg; su - alice -c "plexy export"' | tee "$LAB/run/$scenario.out.log"
+    grep -qE '[0-9]+ apps/commands exported' "$LAB/run/$scenario.out.log" || { echo "plexy export reported nothing" >&2; exit 1; }
+    EXPECT[$scenario]='EXPECT_OS=Bluefin EXPECT_USERCMDS="alice:nvim:--version alice:rg:--version"'
+    L_VERIFY
+    exit
+fi
 if [[ $scenario == silverblue-bluefin ]]; then
     "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
     "$L" ssh "$vm" 'grep -qi silverblue /etc/os-release' ||
@@ -123,7 +169,13 @@ fi
     install -m755 /mnt/host/plexy /usr/local/bin/plexy' ||
     { "$L" scp "$vm" "$LAB/share/plexy" :/usr/local/bin/plexy && "$L" ssh "$vm" 'chmod 755 /usr/local/bin/plexy'; }
 
-cmd="plexy migrate ${ARGS[$scenario]} --yes --reboot"
+if [[ -n ${CUSTOMIZE[$scenario]:-} ]]; then
+    printf '%s\n' "${CUSTOMIZE[$scenario]}" | "$L" ssh "$vm" 'cat > /root/extra.Containerfile'
+fi
+if [[ -n ${NOREBOOT[$scenario]:-} ]]; then
+    "$L" ssh "$vm" 'ls -la --time-style=+%s /boot /boot/efi 2>/dev/null | md5sum' >"$LAB/run/$scenario.boot.before"
+fi
+cmd=${CMD[$scenario]:-"plexy migrate ${ARGS[$scenario]} --yes --reboot"}
 port=$(cat "$LAB/run/$vm.port")
 ssh_cmd="ssh -t -q -i $LAB/id_ed25519 -p $port -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1"
 if [[ $record == --record ]]; then
@@ -132,6 +184,22 @@ if [[ $record == --record ]]; then
         "$HERE/../demos/$scenario.cast" || true
 else
     $ssh_cmd "$cmd" || true
+fi
+# Scenarios that must not change the system: same OS, no /ostree, /boot as before.
+if [[ -n ${NOREBOOT[$scenario]:-} ]]; then
+    sleep 5
+    out="$LAB/run/$scenario.check.log"
+    {
+        "$L" ssh "$vm" '. /etc/os-release; echo "os: $PRETTY_NAME"; test -e /ostree && echo "FAIL /ostree exists" || echo "PASS no /ostree"'
+        "$L" ssh "$vm" 'ls -la --time-style=+%s /boot /boot/efi 2>/dev/null | md5sum' | cmp -s - "$LAB/run/$scenario.boot.before" &&
+            echo "PASS /boot unchanged" || echo "FAIL /boot changed"
+        if [[ -n ${EXPECT_OUTPUT[$scenario]:-} ]]; then
+            grep -qa "${EXPECT_OUTPUT[$scenario]}" "$HERE/../demos/$scenario.cast" 2>/dev/null &&
+                echo "PASS output mentions '${EXPECT_OUTPUT[$scenario]}'" || echo "FAIL output lacks '${EXPECT_OUTPUT[$scenario]}'"
+        fi
+    } | tee "$out"
+    ! grep -q '^FAIL' "$out"
+    exit
 fi
 # A successful migrate reboots the guest; if ssh still answers right away it failed.
 sleep 15
