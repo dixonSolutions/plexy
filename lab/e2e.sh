@@ -47,7 +47,7 @@ SNAP[ubuntu-vanilla]=loaded-vanilla
 ARGS[ubuntu-vanilla]="--target vanilla --mode image --abroot-disk /dev/vdb"
 EXPECT[ubuntu-vanilla]='EXPECT_SESSION=tester EXPECT_OS=Vanilla EXPECT_USERS=tester EXPECT_GROUPS=tester:sudo
 EXPECT_FILES="/etc/tmux.conf /home/tester/Documents/notes.txt" EXPECT_CMDS="htop nginx tmux" EXPECT_ACTIVE="nginx.service"
-EXPECT_GREP="/etc/gdm3/custom.conf:AutomaticLogin=tester"'
+EXPECT_GREP="/etc/gdm3/daemon.conf:AutomaticLogin=tester"'
 
 VM[debian-bluefin]=deb1
 ARGS[debian-bluefin]="--target bluefin --mode hybrid"
