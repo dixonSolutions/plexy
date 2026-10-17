@@ -316,6 +316,10 @@ pub fn var_entry_left_behind(rel: &str) -> bool {
         "lib/sss/mc",
         "tmp",
         "lib/plexy/staging",
+        "cache/man",
+        "lib/apparmor",
+        "cache/apparmor",
+        "cache/debconf",
         "lib/abroot",
     ];
     DENY.contains(&rel)
@@ -419,6 +423,11 @@ fn move_data(
                 .map(|m| m.file_type().is_symlink())
                 .unwrap_or(false)
             {
+                continue;
+            }
+            // Caches belong to the old distribution's tools (ownership, layout);
+            // across families they are regenerated rather than carried.
+            if name == "cache" && from != to {
                 continue;
             }
             if p.is_dir() {
@@ -984,8 +993,13 @@ fn relabel(plan: &Plan, deploy: &Path, var_dirs: &[(PathBuf, &str)]) -> Result<(
     args.push(format!("{}/etc:/target/etc", deploy.display()));
     let mut paths = vec!["/target/etc".to_string()];
     for (host, inner) in var_dirs {
-        args.push("-v".into());
-        args.push(format!("{}:/target{}", host.display(), inner));
+        // non-recursive: never descend into nested mounts (vfat ESP in /boot)
+        args.push("--mount".into());
+        args.push(format!(
+            "type=bind,source={},destination=/target{},bind-nonrecursive",
+            host.display(),
+            inner
+        ));
         paths.push(format!("/target{inner}"));
     }
     // Run setfiles from the new deployment's own tree: the image may no longer
@@ -1179,6 +1193,10 @@ pub fn apply_bootc(m: &Manifest, plan: &Plan, opts: &ApplyOpts, staging: &Path) 
     let mut var_dirs: Vec<(PathBuf, &str)> = vec![];
     if !m.os.selinux || plan.source_family != plan.target_family {
         var_dirs.push((layout.new_var.clone(), "/var"));
+        // bootc/bootupd wrote /boot from a host without SELinux: unlabelled.
+        if m.boot.boot_separate {
+            var_dirs.push((PathBuf::from("/boot"), "/boot"));
+        }
         if layout.home_mounted {
             var_dirs.push((PathBuf::from("/home"), "/var/home"));
         }
