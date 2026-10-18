@@ -53,29 +53,29 @@ from = ["ultramarine"]
 source = "mutable"
 modes = ["hybrid", "toolbox"]
 status = "verified"
-evidence = "demos/ultramarine-bluefin.verify.txt, demos/ultramarine-bluefin-toolbox.verify.txt"
-notes = "verified with client-side layering and the upstream remote (lab, d609927)"
+evidence = "demos/ultramarine-bluefin.verify.txt, demos/ultramarine-bluefin-reboot.verify.txt, demos/ultramarine-bluefin-toolbox.verify.txt, demos/ultramarine-export.verify.txt"
+notes = "verified in the full regression on d4e2e7c (demos/final-regression.txt)"
 [[target.conversion]]
 from = ["ubuntu"]
 source = "mutable"
 modes = ["hybrid"]
 status = "verified"
 evidence = "demos/ubuntu-bluefin.verify.txt"
-notes = "verified with client-side layering and the upstream remote (lab, d609927)"
+notes = "verified in the full regression on d4e2e7c (demos/final-regression.txt)"
 [[target.conversion]]
 from = ["debian"]
 source = "mutable"
 modes = ["hybrid"]
 status = "verified"
-evidence = "demos/debian-bluefin.verify.txt"
-notes = "verified with client-side layering and the upstream remote (lab, d609927)"
+evidence = "demos/debian-bluefin.verify.txt, demos/debian-cleanup.verify.txt, demos/debian-dryrun.check.txt"
+notes = "verified in the full regression on d4e2e7c (demos/final-regression.txt)"
 [[target.conversion]]
 from = ["fedora", "silverblue", "kinoite", "bluefin", "aurora", "bazzite"]
 source = "image-based"
 modes = ["image"]
 status = "verified"
-evidence = "demos/silverblue-bluefin.verify.txt"
-notes = "verified with client-side layering and the upstream remote (lab, d609927)"
+evidence = "demos/silverblue-bluefin.verify.txt, demos/silverblue-bluefin-reboot.verify.txt"
+notes = "verified in the full regression on d4e2e7c (demos/final-regression.txt)"
 [[target.conversion]]
 from = ["family:fedora", "family:debian"]
 source = "any"
@@ -207,8 +207,8 @@ from = ["fedora"]
 source = "mutable"
 modes = ["image"]
 status = "verified"
-evidence = "demos/fedora-silverblue.verify.txt"
-notes = "verified with client-side layering and the upstream remote (lab, d609927)"
+evidence = "demos/fedora-silverblue.verify.txt, demos/fedora-split.verify.txt, demos/fedora-rollback.verify.txt"
+notes = "verified in the full regression on d4e2e7c (demos/final-regression.txt)"
 [[target.conversion]]
 from = ["family:fedora", "family:debian"]
 source = "any"
@@ -266,6 +266,13 @@ signed = false
 # `plexy update` rebuild it from the remote.
 layering = "image"
 [[target.conversion]]
+from = ["fedora"]
+source = "mutable"
+modes = ["image"]
+status = "verified"
+evidence = "demos/fedora-bootc.verify.txt, demos/fedora-bootc-update.verify.txt"
+notes = "verified in the full regression on d4e2e7c, incl. plexy update rebuilding and staging a changed image"
+[[target.conversion]]
 from = ["family:fedora", "family:debian"]
 source = "any"
 modes = ["image", "hybrid", "brew", "toolbox"]
@@ -289,7 +296,7 @@ source = "mutable"
 modes = ["image"]
 status = "verified"
 evidence = "demos/ubuntu-vanilla.verify.txt"
-notes = "needs --abroot-disk (a second disk or free space); the old system stays bootable"
+notes = "verified in the full regression on d4e2e7c; needs --abroot-disk (a second disk or free space); the old system stays bootable"
 [[target.conversion]]
 from = ["family:debian"]
 source = "mutable"

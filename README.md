@@ -103,10 +103,11 @@ updates is set per target in the registry (`layering`):
 | `image` | fedora-bootc (servers) | `localhost/plexy/…` built `FROM` the remote | baked into the derived image; `plexy update` / `plexy-update.timer` (weekly) rebuilds it when the remote's digest changes and stages it with `bootc upgrade` |
 | `abroot` | Vanilla OS | the ABRoot image (`abroot.json`) | `/etc/abroot/packages.add`, reinstalled at every `abroot upgrade` |
 
-> Verified in the lab on the client-layering model (d609927): Fedora → Silverblue, Ultramarine →
-> Bluefin (hybrid and toolbox), Ubuntu → Bluefin, Debian → Bluefin and Silverblue → Bluefin
-> (`plexy switch`): after the second boot the Bluefin guests follow
-> `ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable`, layered packages intact.
+> Verified in the full lab regression on `d4e2e7c` (see [Verified migrations](#verified-migrations)):
+> after the second boot, migrated Bluefin guests follow
+> `ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable` with their layered packages and
+> `uupd` working; Silverblue follows `quay.io/fedora/fedora-silverblue:44`; fedora-bootc rebuilds
+> and stages its derived image with `plexy update`.
 
 With `client` layering, updates go through rpm-ostree (Universal Blue's `uupd`, or
 `rpm-ostree upgrade`); `bootc upgrade` refuses a deployment that has layered packages. On images
