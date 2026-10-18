@@ -434,7 +434,26 @@ fn print_scan_summary(m: &manifest::Manifest) {
 /// Resolve `--target`. "auto" walks the registry's candidates for this
 /// desktop and source (verified conversions first) and keeps the first whose
 /// *inspected* desktop matches.
+/// Plexy reads rpm/dpkg databases; anything else cannot be planned.
+fn check_source_supported(m: &manifest::Manifest) -> Result<()> {
+    let known_pm = !matches!(m.os.pkg_manager, os::PkgManager::Unknown);
+    if m.os.family == os::Family::Other || !known_pm {
+        bail!(
+            "{} is not supported as a source: Plexy reads dnf/rpm and apt/dpkg systems (Fedora, RHEL clones, \
+             Ultramarine, Debian, Ubuntu and their derivatives) and image-based Fedora systems. \
+             Nothing was changed",
+            if m.os.pretty_name.is_empty() {
+                "This system"
+            } else {
+                m.os.pretty_name.as_str()
+            }
+        );
+    }
+    Ok(())
+}
+
 fn choose_target(m: &manifest::Manifest, t: &str) -> Result<(String, target::ImageFacts)> {
+    check_source_supported(m)?;
     util::ensure_tools(&[("podman", "podman")])?;
     let reg = registry::Registry::load()?;
     if t != "auto" {
@@ -568,9 +587,18 @@ fn make_plan(
                 .next()
                 .unwrap_or("")
                 .to_string();
+        let major = m.os.version_id.split('.').next().unwrap_or("").to_string();
+        let vendor = match m.os.id.as_str() {
+            "rocky" => "rockylinux",
+            other => other,
+        };
         let candidates = [
             tb.base_image.clone(),
             format!("docker.io/library/{}:{}", m.os.id, m.os.version_id),
+            // distributions that publish on quay.io under their own name
+            // (quay.io/rockylinux/rockylinux:10, quay.io/centos/centos:stream10)
+            format!("quay.io/{vendor}/{vendor}:{major}"),
+            format!("quay.io/{vendor}/{vendor}:stream{major}"),
             format!("docker.io/library/{id_like}:latest"),
         ];
         let found = candidates
@@ -1331,6 +1359,24 @@ mod tests {
         assert!(policy_trusts(ublue, "ghcr.io/ublue-os/bluefin:stable"));
         assert!(!policy_trusts(ublue, "ghcr.io/ublue-osx/evil:latest"));
         assert!(!policy_trusts(ublue, "quay.io/fedora/fedora-silverblue:44"));
+    }
+
+    #[test]
+    fn unsupported_sources_are_refused() {
+        let mut m: manifest::Manifest =
+            serde_json::from_str(include_str!("../tests/data/manifest-min.json")).unwrap();
+        assert!(
+            check_source_supported(&m).is_ok(),
+            "ubuntu/apt is supported"
+        );
+        m.os.id = "opensuse-tumbleweed".into();
+        m.os.pretty_name = "openSUSE Tumbleweed".into();
+        m.os.family = os::Family::Other;
+        m.os.pkg_manager = os::PkgManager::Unknown;
+        let e = check_source_supported(&m).unwrap_err().to_string();
+        assert!(
+            e.contains("openSUSE Tumbleweed is not supported") && e.contains("Nothing was changed")
+        );
     }
 
     #[test]

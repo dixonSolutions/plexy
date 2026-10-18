@@ -1090,6 +1090,16 @@ pub fn toolbox_base_image(id: &str, family: Family, version: &str) -> String {
         ("fedora", _) => format!("registry.fedoraproject.org/fedora-toolbox:{version}"),
         ("ubuntu", _) => format!("quay.io/toolbx/ubuntu-toolbox:{version}"),
         ("debian", _) => format!("quay.io/toolbx-images/debian-toolbox:{version}"),
+        // Enterprise Linux clones: their own toolbox images, by major version
+        // (a Fedora toolbox would be the wrong distribution and release).
+        ("almalinux", _) | ("rocky", _) | ("centos", _) => {
+            let major = version.split('.').next().unwrap_or(version);
+            match id {
+                "rocky" => format!("quay.io/toolbx-images/rockylinux-toolbox:{major}"),
+                "centos" => format!("quay.io/toolbx-images/centos-toolbox:stream{major}"),
+                _ => format!("quay.io/toolbx-images/{id}-toolbox:{major}"),
+            }
+        }
         // Fedora remixes (Ultramarine, Nobara, ...) run fine on the Fedora
         // toolbox image plus their own repositories (copied from the host).
         (_, Family::Fedora) => format!("registry.fedoraproject.org/fedora-toolbox:{version}"),
@@ -1449,6 +1459,18 @@ mod tests {
         assert_eq!(
             toolbox_base_image("ultramarine", Family::Fedora, "44"),
             "registry.fedoraproject.org/fedora-toolbox:44"
+        );
+        assert_eq!(
+            toolbox_base_image("rocky", Family::Fedora, "10.1"),
+            "quay.io/toolbx-images/rockylinux-toolbox:10"
+        );
+        assert_eq!(
+            toolbox_base_image("almalinux", Family::Fedora, "9.6"),
+            "quay.io/toolbx-images/almalinux-toolbox:9"
+        );
+        assert_eq!(
+            toolbox_base_image("centos", Family::Fedora, "10"),
+            "quay.io/toolbx-images/centos-toolbox:stream10"
         );
         assert_eq!(
             toolbox_base_image("ubuntu", Family::Debian, "26.04"),
