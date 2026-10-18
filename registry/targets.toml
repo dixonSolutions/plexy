@@ -53,29 +53,29 @@ from = ["ultramarine"]
 source = "mutable"
 modes = ["hybrid", "toolbox"]
 status = "verified"
-evidence = "demos/ultramarine-bluefin.verify.txt"
-notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+evidence = "demos/ultramarine-bluefin.verify.txt, demos/ultramarine-bluefin-toolbox.verify.txt"
+notes = "verified with client-side layering and the upstream remote (lab, d609927)"
 [[target.conversion]]
 from = ["ubuntu"]
 source = "mutable"
 modes = ["hybrid"]
 status = "verified"
 evidence = "demos/ubuntu-bluefin.verify.txt"
-notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+notes = "verified with client-side layering and the upstream remote (lab, d609927)"
 [[target.conversion]]
 from = ["debian"]
 source = "mutable"
 modes = ["hybrid"]
 status = "verified"
 evidence = "demos/debian-bluefin.verify.txt"
-notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+notes = "verified with client-side layering and the upstream remote (lab, d609927)"
 [[target.conversion]]
 from = ["fedora", "silverblue", "kinoite", "bluefin", "aurora", "bazzite"]
 source = "image-based"
 modes = ["image"]
 status = "verified"
 evidence = "demos/silverblue-bluefin.verify.txt"
-notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+notes = "verified with client-side layering and the upstream remote (lab, d609927)"
 [[target.conversion]]
 from = ["family:fedora", "family:debian"]
 source = "any"
@@ -208,7 +208,7 @@ source = "mutable"
 modes = ["image"]
 status = "verified"
 evidence = "demos/fedora-silverblue.verify.txt"
-notes = "verified with derived-image layering; client-side layering (now the default) awaits a re-run"
+notes = "verified with client-side layering and the upstream remote (lab, d609927)"
 [[target.conversion]]
 from = ["family:fedora", "family:debian"]
 source = "any"

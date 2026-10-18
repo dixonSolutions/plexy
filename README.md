@@ -103,9 +103,10 @@ updates is set per target in the registry (`layering`):
 | `image` | fedora-bootc (servers) | `localhost/plexy/…` built `FROM` the remote | baked into the derived image; `plexy update` / `plexy-update.timer` (weekly) rebuilds it when the remote's digest changes and stages it with `bootc upgrade` |
 | `abroot` | Vanilla OS | the ABRoot image (`abroot.json`) | `/etc/abroot/packages.add`, reinstalled at every `abroot upgrade` |
 
-> The lab results below predate client-side layering: they used a derived image for every target.
-> Client-side layering and the signed rebase are covered by unit tests and checked against a native
-> Bluefin's origin, but have not yet been re-run end to end.
+> Verified in the lab on the client-layering model (d609927): Fedora → Silverblue, Ultramarine →
+> Bluefin (hybrid and toolbox), Ubuntu → Bluefin, Debian → Bluefin and Silverblue → Bluefin
+> (`plexy switch`): after the second boot the Bluefin guests follow
+> `ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable`, layered packages intact.
 
 `plexy update` explains the method on any migrated system. `--customize` needs a derived image, so
 it switches a `client` target to `image` layering.
