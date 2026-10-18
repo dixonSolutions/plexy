@@ -1,7 +1,8 @@
 # Fedora 44 with KDE Plasma, SDDM autologin for tester, dark theme, CLI tools.
 set -e
-dnf -y -q group install kde-desktop-environment
-dnf -y -q install htop tmux neovim podman
+dnf -y -q install @kde-desktop-environment
+dnf -y -q install htop tmux neovim podman sddm
+test -e /usr/lib/systemd/system/sddm.service
 systemctl enable sddm
 systemctl set-default graphical.target
 mkdir -p /etc/sddm.conf.d
