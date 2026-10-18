@@ -17,6 +17,8 @@
 #   EXPECT_BOOTED_IMAGE substring the booted image reference must contain (bootc status)
 #   EXPECT_LAYERED   packages rpm-ostree must list as layered (client-side)
 #   EXPECT_ORIGIN    substring of the booted deployment's origin (e.g. ostree-image-signed)
+#   EXPECT_UPDATE_CHECK  1: the system's updater can check for updates
+#                    (uupd --dry-run if present, else rpm-ostree upgrade --check)
 #   EXPECT_STARTUSER user whose systemd user manager is started as a login would
 #                    (headless guests: runs plexy's first-login stage)
 pass=0 fail=0
@@ -40,6 +42,13 @@ fi
 if [ -n "$EXPECT_ORIGIN" ]; then
   org=$(rpm-ostree status --json --booted 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["deployments"][0].get("container-image-reference",""))' 2>/dev/null)
   case "$org" in *"$EXPECT_ORIGIN"*) ok "origin $org" ;; *) ko "origin $EXPECT_ORIGIN (got $org)" ;; esac
+fi
+if [ -n "$EXPECT_UPDATE_CHECK" ]; then
+  if command -v uupd >/dev/null; then
+    chk "update check (uupd --dry-run)" sh -c 'timeout 600 uupd --dry-run 2>&1 | grep -q "Updates Completed Successfully"'
+  else
+    chk "update check (rpm-ostree upgrade --check)" sh -c 'timeout 600 rpm-ostree upgrade --check; r=$?; [ $r = 0 ] || [ $r = 77 ]'
+  fi
 fi
 for pk in $EXPECT_LAYERED; do
   # deployments[0] is the newest: with --apply-live the layers live in the

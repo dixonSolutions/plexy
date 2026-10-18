@@ -120,7 +120,9 @@ if [[ $scenario == debian-cleanup ]]; then
     "$L" ssh "$vm" 'systemctl reboot' || true
     sleep 30
     "$L" wait "$vm" 900
-    EXPECT[$scenario]=${EXPECT[debian-bluefin]}
+    # After cleanup and a second boot the signed rebase is active: bootc no
+    # longer reports an image (rpm-ostree layers), the origin is signed.
+    EXPECT[$scenario]="${EXPECT[debian-bluefin]/EXPECT_BOOTED_IMAGE=ghcr.io\/ublue-os\/bluefin:stable/EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_UPDATE_CHECK=1}"
     L_VERIFY
     exit
 fi
@@ -144,7 +146,7 @@ if [[ $scenario == silverblue-bluefin-reboot ]]; then
     "$L" ssh "$vm" 'systemctl reboot' || true
     sleep 30
     "$L" wait "$vm" 900
-    EXPECT[$scenario]='EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_CMDS="htop tmux nginx" EXPECT_USERS=tester EXPECT_FILES=/var/home/tester/projects/note.txt'
+    EXPECT[$scenario]='EXPECT_UPDATE_CHECK=1 EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=nginx EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_CMDS="htop tmux nginx" EXPECT_USERS=tester EXPECT_FILES=/var/home/tester/projects/note.txt'
     L_VERIFY
     exit
 fi
@@ -155,7 +157,7 @@ if [[ $scenario == ultramarine-bluefin-reboot ]]; then
     "$L" ssh "$vm" 'systemctl reboot' || true
     sleep 30
     "$L" wait "$vm" 900
-    EXPECT[$scenario]='EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=cockpit EXPECT_ENABLED=cockpit.socket EXPECT_USERS=alice EXPECT_FILES=/var/home/alice/Documents/thesis.txt'
+    EXPECT[$scenario]='EXPECT_UPDATE_CHECK=1 EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=cockpit EXPECT_ENABLED=cockpit.socket EXPECT_USERS=alice EXPECT_FILES=/var/home/alice/Documents/thesis.txt'
     L_VERIFY
     exit
 fi
