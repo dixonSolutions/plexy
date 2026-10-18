@@ -174,8 +174,30 @@ pub fn update(force: bool) -> Result<()> {
     util::run_visible("bootc", &["upgrade"])?;
     write_file(&Path::new(STATE).join("base.digest"), &digest)?;
     let _ = run("podman", &["image", "prune", "-f"]);
-    info("staged; the new image is used after the next reboot");
+    let status = try_run("bootc", &["status", "--format=json"]).unwrap_or_default();
+    match staged_digest(&status) {
+        Some(d) => info(format!(
+            "staged ({d}); the new image is used after the next reboot"
+        )),
+        None => info("already up to date: the rebuilt image is identical to the booted one"),
+    }
     Ok(())
+}
+
+/// Digest of the staged deployment in `bootc status --format=json`, if any.
+pub fn staged_digest(status_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(status_json).ok()?;
+    let staged = v.pointer("/status/staged")?;
+    if staged.is_null() {
+        return None;
+    }
+    Some(
+        staged
+            .pointer("/image/imageDigest")
+            .and_then(|d| d.as_str())
+            .unwrap_or("new deployment")
+            .to_string(),
+    )
 }
 
 /// `plexy layer` (plexy-layer.service): client-side layering after first boot.
