@@ -655,6 +655,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn staged_deployment_detection() {
+        let none = r#"{"status":{"staged":null,"booted":{"image":{"imageDigest":"sha256:a"}}}}"#;
+        assert_eq!(staged_digest(none), None);
+        let staged = r#"{"status":{"staged":{"image":{"imageDigest":"sha256:b"}},"booted":{}}}"#;
+        assert_eq!(staged_digest(staged).as_deref(), Some("sha256:b"));
+        assert_eq!(staged_digest("not json"), None);
+    }
+
+    #[test]
     fn brew_commands_from_listing() {
         let l = "/home/linuxbrew/.linuxbrew/Cellar/ripgrep/15.2.0/bin/rg\n/home/linuxbrew/.linuxbrew/Cellar/ripgrep/15.2.0/share/man/man1/rg.1\n/home/linuxbrew/.linuxbrew/Cellar/ripgrep/15.2.0/etc/bash_completion.d/rg\n";
         assert_eq!(brew_commands(l), vec!["rg"]);
