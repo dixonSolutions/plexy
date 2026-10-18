@@ -14,7 +14,7 @@ L="$HERE/lab.sh"
 scenario=${1:?scenario}
 record=${2:-}
 
-declare -A VM ARGS EXPECT SNAP CMD CUSTOMIZE NOREBOOT EXPECT_OUTPUT
+declare -A VM ARGS EXPECT SNAP CMD CUSTOMIZE NOREBOOT EXPECT_OUTPUT NOSTATE
 VM[fedora-silverblue]=fed1
 ARGS[fedora-silverblue]="--target silverblue --mode image"
 EXPECT[fedora-silverblue]='EXPECT_WAITFILE=/var/lib/plexy/layer.done EXPECT_BOOTED_IMAGE=quay.io/fedora/fedora-silverblue:44 EXPECT_LAYERED="htop nginx tmux" EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
@@ -88,6 +88,41 @@ EXPECT[fedora-bootc]='EXPECT_OS=Fedora EXPECT_BOOTED_IMAGE=localhost/plexy EXPEC
 EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf"
 EXPECT_CMDS="htop tmux nginx" EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 VM[fedora-bootc-update]=fed1
+
+# --- more sources (guests made with lab/prep.sh) ------------------------------
+# AlmaLinux 10 (EL, EPEL) -> CentOS Stream bootc (same EL major) and -> Fedora bootc.
+VM[alma-centos-bootc]=alma1
+ARGS[alma-centos-bootc]="--target quay.io/centos-bootc/centos-bootc:stream10 --mode image"
+EXPECT[alma-centos-bootc]='EXPECT_OS="CentOS Stream" EXPECT_BOOTED_IMAGE=localhost/plexy EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf" EXPECT_CMDS="htop tmux nginx vim" EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
+VM[alma-fedora-bootc]=alma1
+ARGS[alma-fedora-bootc]="--target fedora-bootc --mode image"
+EXPECT[alma-fedora-bootc]=${EXPECT[alma-centos-bootc]/EXPECT_OS=\"CentOS Stream\"/EXPECT_OS=Fedora}
+
+# Fedora 44 KDE Plasma (SDDM autologin, Breeze Dark) -> Aurora (KDE).
+VM[fedora-kde-aurora]=fedk1
+ARGS[fedora-kde-aurora]="--target aurora --mode hybrid"
+EXPECT[fedora-kde-aurora]='EXPECT_WAITFILE="/var/lib/plexy/layer.done /var/home/tester/.local/state/plexy/firstlogin.done" EXPECT_SESSION=tester
+EXPECT_OS=Aurora EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel EXPECT_FILES="/var/home/tester/Documents/notes.txt /etc/tmux.conf"
+EXPECT_ACTIVE="sddm.service sshd.service" EXPECT_USERCMDS="tester:nvim:--version"
+EXPECT_GREP="/var/home/tester/.config/kdeglobals:BreezeDark"'
+
+# Debian 13 Cinnamon: no image-based target ships Cinnamon; plexy must refuse.
+VM[debian-cinnamon-auto]=debc1
+CMD[debian-cinnamon-auto]="plexy migrate --target auto --mode hybrid --yes --reboot"
+NOREBOOT[debian-cinnamon-auto]=1
+EXPECT_OUTPUT[debian-cinnamon-auto]='Cinnamon'
+VM[debian-cinnamon-bluefin]=debc1
+CMD[debian-cinnamon-bluefin]="plexy migrate --target bluefin --mode hybrid --yes --reboot"
+NOREBOOT[debian-cinnamon-bluefin]=1
+EXPECT_OUTPUT[debian-cinnamon-bluefin]='desktop mismatch'
+
+# openSUSE Tumbleweed (zypper): not a supported source; refused, nothing written.
+VM[tumbleweed-refusal]=tw1
+CMD[tumbleweed-refusal]="plexy migrate --target bluefin --yes --reboot"
+NOREBOOT[tumbleweed-refusal]=1
+NOSTATE[tumbleweed-refusal]=1
+EXPECT_OUTPUT[tumbleweed-refusal]='not supported as a source'
 
 # silverblue-bluefin: run right after fedora-silverblue. Starts from an
 # image-based OS and moves it to another image with `plexy switch`.
@@ -248,6 +283,9 @@ if [[ -n ${NOREBOOT[$scenario]:-} ]]; then
         "$L" ssh "$vm" '. /etc/os-release; echo "os: $PRETTY_NAME"; test -e /ostree && echo "FAIL /ostree exists" || echo "PASS no /ostree"'
         "$L" ssh "$vm" 'find /boot /boot/efi -xdev -printf "%p %s %T@\\n" 2>/dev/null | sort | md5sum' | cmp -s - "$LAB/run/$scenario.boot.before" &&
             echo "PASS /boot unchanged" || echo "FAIL /boot changed"
+        if [[ -n ${NOSTATE[$scenario]:-} ]]; then
+            "$L" ssh "$vm" 'test -e /var/lib/plexy && echo "FAIL /var/lib/plexy written" || echo "PASS nothing under /var/lib/plexy"'
+        fi
         if [[ -n ${EXPECT_OUTPUT[$scenario]:-} ]]; then
             grep -qa "${EXPECT_OUTPUT[$scenario]}" "$HERE/../demos/$scenario.cast" 2>/dev/null &&
                 echo "PASS output mentions '${EXPECT_OUTPUT[$scenario]}'" || echo "FAIL output lacks '${EXPECT_OUTPUT[$scenario]}'"
