@@ -1,4 +1,7 @@
 == Fedora Linux 44 (Cloud Edition) (kernel 6.19.10-300.fc44.x86_64)
+   layer: layered with rpm-ostree (live): htop nginx tmux
+   layer: services enabled as on the old system: nginx.service
+   layer: updates follow quay.io/fedora/fedora-silverblue:44
 PASS  os is Cloud Edition
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
@@ -16,4 +19,7 @@ PASS  no failed units
    SELinux: Enforcing, AVC denials this boot: 0
    firstboot: Plexy migration to quay.io/fedora/fedora-silverblue:44 completed first boot.
    firstboot: system dconf databases rebuilt
+   firstboot: layered with rpm-ostree (live): htop nginx tmux
+   firstboot: services enabled as on the old system: nginx.service
+   firstboot: updates follow quay.io/fedora/fedora-silverblue:44
 == 14 passed, 0 failed

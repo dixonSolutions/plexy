@@ -1,9 +1,19 @@
 == Fedora Linux 44.20261017.0 (Silverblue) (kernel 7.2.11-200.fc44.x86_64)
+PASS  booted image registry quay.io/fedora/fedora-silverblue:44
+PASS  layered package htop
+PASS  layered package nginx
+PASS  layered package tmux
+   layer: layered with rpm-ostree (live): htop nginx tmux
+   layer: services enabled as on the old system: nginx.service
+   layer: updates follow quay.io/fedora/fedora-silverblue:44
 PASS  os is Silverblue
 PASS  booted from an ostree/bootc deployment
-● Booted image: containers-storage:localhost/plexy/silverblue:fed1
-        Digest: sha256:9371ee44df41a5caa31b4cda93e9ff304d19b0fb85fe627eeafd301bfadac9dd (amd64)
-       Version: 44.20261017.0 (2026-10-17T13:35:58Z)
+  Staged ostree
+         Commit: b62d4c02feac0764375fc035ba899446b38a9afa1a422a4cca7d4a0d59b3ef22
+
+● Booted image: quay.io/fedora/fedora-silverblue:44
+        Digest: sha256:5ee12048ae59842893aa83e84466e2bea833ea0981f128af8043f3859f6ed9e7 (amd64)
+       Version: 44.20261017.0 (2026-10-17T00:55:25Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
 PASS  password hash of tester carried
@@ -22,4 +32,7 @@ PASS  no failed units
    SELinux: Enforcing, AVC denials this boot: 7
    firstboot: Plexy migration to quay.io/fedora/fedora-silverblue:44 completed first boot.
    firstboot: system dconf databases rebuilt
-== 17 passed, 0 failed
+   firstboot: layered with rpm-ostree (live): htop nginx tmux
+   firstboot: services enabled as on the old system: nginx.service
+   firstboot: updates follow quay.io/fedora/fedora-silverblue:44
+== 21 passed, 0 failed

@@ -59,8 +59,8 @@ EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
 VM[fedora-split]=fed1
 CUSTOMIZE[fedora-split]='RUN echo plexy-custom > /etc/plexy-custom-marker'
 CMD[fedora-split]="plexy plan --target silverblue --mode image --customize /root/extra.Containerfile --yes && plexy build && plexy apply --yes --reboot"
-EXPECT[fedora-split]='EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
-EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf /etc/plexy-custom-marker" EXPECT_CMDS="htop tmux nginx"
+EXPECT[fedora-split]='EXPECT_BOOTED_IMAGE=localhost/plexy EXPECT_ENABLED=plexy-update.timer EXPECT_OS=Silverblue EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel
+EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf /etc/plexy-custom-marker /var/lib/plexy/base.digest" EXPECT_CMDS="htop tmux nginx"
 EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/plexy-custom-marker:plexy-custom"'
 
 # debian-dryrun: --dry-run must change nothing.
@@ -80,6 +80,14 @@ VM[debian-cleanup]=deb1
 VM[ultramarine-export]=ultra1
 VM[ultramarine-bluefin-reboot]=ultra1
 VM[silverblue-bluefin-reboot]=fed1
+
+# fedora-bootc: a target that keeps a derived image; plexy-update.timer rebuilds it.
+VM[fedora-bootc]=fed1
+ARGS[fedora-bootc]="--target fedora-bootc --mode image"
+EXPECT[fedora-bootc]='EXPECT_OS=Fedora EXPECT_BOOTED_IMAGE=localhost/plexy EXPECT_ENABLED=plexy-update.timer
+EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel EXPECT_FILES="/var/home/tester/projects/note.txt /etc/tmux.conf"
+EXPECT_CMDS="htop tmux nginx" EXPECT_ACTIVE="nginx.service sshd.service" EXPECT_GREP="/etc/tmux.conf:mouse"'
+VM[fedora-bootc-update]=fed1
 
 # silverblue-bluefin: run right after fedora-silverblue. Starts from an
 # image-based OS and moves it to another image with `plexy switch`.
@@ -114,6 +122,19 @@ if [[ $scenario == debian-cleanup ]]; then
     "$L" wait "$vm" 900
     EXPECT[$scenario]=${EXPECT[debian-bluefin]}
     L_VERIFY
+    exit
+fi
+if [[ $scenario == fedora-bootc-update ]]; then
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'bootc status --format=json | grep -q localhost/plexy' || { echo "$vm does not boot a plexy-derived image: run fedora-bootc first" >&2; exit 1; }
+    "$L" ssh "$vm" 'systemctl is-enabled plexy-update.timer; plexy update --force' 2>&1 | tee "$LAB/run/$scenario.out.log" | grep -vE '^(Copying|STEP|-->)' | tail -12
+    "$L" ssh "$vm" 'bootc status --format=json' | python3 -c 'import json,sys
+d = json.load(sys.stdin)["status"]
+st = d.get("staged")
+print("PASS update staged" if st else "FAIL nothing staged")
+if st: print("   staged:", st["image"]["image"]["image"], st["image"].get("imageDigest", ""))
+print("   booted:", d["booted"]["image"]["image"]["image"], d["booted"]["image"].get("imageDigest", ""))' | tee "$LAB/run/$scenario.check.log"
+    ! grep -q '^FAIL' "$LAB/run/$scenario.check.log"
     exit
 fi
 if [[ $scenario == silverblue-bluefin-reboot ]]; then
