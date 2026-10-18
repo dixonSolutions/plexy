@@ -129,6 +129,9 @@ fi
 if [[ $scenario == fedora-bootc-update ]]; then
     "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
     "$L" ssh "$vm" 'bootc status --format=json | grep -q localhost/plexy' || { echo "$vm does not boot a plexy-derived image: run fedora-bootc first" >&2; exit 1; }
+    # A rebuild of an unchanged remote gives the same image, so change the
+    # build context the way a user tweaking it would.
+    "$L" ssh "$vm" 'echo "RUN echo plexy-update-test > /etc/plexy-update-marker" >> /var/lib/plexy/staging/system/Containerfile'
     "$L" ssh "$vm" 'systemctl is-enabled plexy-update.timer; plexy update --force' 2>&1 | tee "$LAB/run/$scenario.out.log" | grep -vE '^(Copying|STEP|-->)' | tail -12
     "$L" ssh "$vm" 'bootc status --format=json' | python3 -c 'import json,sys
 d = json.load(sys.stdin)["status"]
@@ -136,7 +139,12 @@ st = d.get("staged")
 print("PASS update staged" if st else "FAIL nothing staged")
 if st: print("   staged:", st["image"]["image"]["image"], st["image"].get("imageDigest", ""))
 print("   booted:", d["booted"]["image"]["image"]["image"], d["booted"]["image"].get("imageDigest", ""))' | tee "$LAB/run/$scenario.check.log"
-    ! grep -q '^FAIL' "$LAB/run/$scenario.check.log"
+    grep -q '^FAIL' "$LAB/run/$scenario.check.log" && exit 1
+    "$L" ssh "$vm" 'systemctl reboot' || true
+    sleep 30
+    "$L" wait "$vm" 900
+    EXPECT[$scenario]='EXPECT_OS=Fedora EXPECT_BOOTED_IMAGE=localhost/plexy EXPECT_FILES=/etc/plexy-update-marker EXPECT_GREP=/etc/plexy-update-marker:plexy-update-test EXPECT_CMDS="htop tmux nginx" EXPECT_ACTIVE=nginx.service EXPECT_ENABLED=plexy-update.timer'
+    L_VERIFY
     exit
 fi
 if [[ $scenario == silverblue-bluefin-reboot ]]; then
