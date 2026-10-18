@@ -16,5 +16,5 @@ PASS  /etc/gdm3/daemon.conf contains 'AutomaticLogin=tester'
 PASS  no failed units
    firstboot: Plexy migration to ghcr.io/vanilla-os/gnome:latest completed first boot.
    firstboot: system dconf databases rebuilt
-   firstboot: installed Flatpaks: org.mozilla.firefox
+   firstboot: Flatpak install failed (will retry next boot): `flatpak install --system --noninteractive -y flathub org.mozilla.firefox` exited with exit status: 1: error: No remote refs found for ‘flathub’
 == 15 passed, 0 failed

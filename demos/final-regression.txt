@@ -1,0 +1,18 @@
+fedora-bootc E2E-EXIT=0 == 17 passed, 0 failed
+fedora-bootc-update E2E-EXIT=0 == 11 passed, 0 failed
+ubuntu-vanilla E2E-EXIT=0 == 15 passed, 0 failed
+ultra40-refusal E2E-EXIT=0 
+debian-dryrun E2E-EXIT=0 
+ultramarine-bluefin E2E-EXIT=0 == 19 passed, 0 failed
+ultramarine-bluefin-reboot E2E-EXIT=0 == 11 passed, 0 failed
+ubuntu-bluefin E2E-EXIT=0 == 20 passed, 0 failed
+debian-bluefin E2E-EXIT=0 == 19 passed, 0 failed
+debian-cleanup E2E-EXIT=0 == 20 passed, 0 failed
+fedora-split E2E-EXIT=0 == 19 passed, 0 failed
+fedora-silverblue E2E-EXIT=0 == 21 passed, 0 failed
+fedora-rollback E2E-EXIT=0 == 14 passed, 0 failed
+fedora-silverblue E2E-EXIT=0 == 21 passed, 0 failed
+silverblue-bluefin E2E-EXIT=0 == 17 passed, 0 failed
+silverblue-bluefin-reboot E2E-EXIT=0 == 15 passed, 0 failed
+ultramarine-bluefin-toolbox E2E-EXIT=0 == 11 passed, 0 failed
+ultramarine-export E2E-EXIT=0 == 5 passed, 0 failed

@@ -3,8 +3,8 @@ PASS  booted image containers-storage localhost/plexy/fedora-bootc:fed1
 PASS  os is Fedora
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/fedora-bootc:fed1
-        Digest: sha256:17ed75b23d010495ac4050cfcfd465ceced0e319a417d389efcc3f5772603348 (amd64)
-       Version: 44.20261017.0 (2026-10-18T00:53:11Z)
+        Digest: sha256:f57f40ff0f2fb5d961cb220ef2c673b71045a45f4f2a3bdff1eeb0cb910c8a57 (amd64)
+       Version: 44.20261017.0 (2026-10-18T01:22:46Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
 PASS  password hash of tester carried

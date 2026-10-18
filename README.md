@@ -211,34 +211,47 @@ password hashes, group memberships, data files, layered commands, services, moun
 config content, failed units and SELinux denials. These are VMs, not your machine. **Nothing here
 is guaranteed.**
 
+All rows below come from one regression run on commit `d4e2e7c` (70 unit tests pass):
+[final-regression.txt](demos/final-regression.txt). With layering packages client-side (Bluefin,
+Silverblue and the other Fedora Atomic / Universal Blue targets), the migrated system boots the
+upstream image itself, `plexy-layer` adds your packages with rpm-ostree after the first boot, and
+signed images move to their `ostree-image-signed:` remote on the next boot.
+
 | from | to | mode | result | evidence |
 |---|---|---|---|---|
-| Fedora 44 Cloud (btrfs subvols, nginx, sshd tweak) | Fedora Silverblue 44 | image | **17/17** | [cast](demos/fedora-silverblue.cast) · [gif](demos/fedora-silverblue.gif) · [verify](demos/fedora-silverblue.verify.txt) · [screen](demos/fedora-silverblue-login.png) |
-| …then `plexy rollback` | Fedora 44 Cloud again | — | **14/14** (chronyd ownership restored) | [verify](demos/fedora-rollback.verify.txt) |
-| …or `plexy switch` from that Silverblue (already image-based) | Bluefin | image | **15/15** (nginx re-layered, htop/tmux in Bluefin) | [cast](demos/silverblue-bluefin.cast) · [gif](demos/silverblue-bluefin.gif) · [verify](demos/silverblue-bluefin.verify.txt) |
-| Ultramarine 44 GNOME (ext4, RPM Fusion, Terra, GNOME ext., dconf, Flatpak) | Bluefin | hybrid | **17/17** (incl. alice's autologin session, Homebrew tools)¹ | [cast](demos/ultramarine-bluefin.cast) · [gif](demos/ultramarine-bluefin.gif) · [verify](demos/ultramarine-bluefin.verify.txt) · [desktop](demos/ultramarine-bluefin-desktop.png) · [VLC → Flathub](demos/ultramarine-bluefin-vlc-flatpak.png) |
-| Ubuntu 26.04 GNOME (ext4, apt, nginx/tmux/neovim, Firefox snap) | Bluefin | hybrid | **18/18**² (cross-family: deb → rpm, incl. autologin session, Homebrew tools) | [cast](demos/ubuntu-bluefin.cast) · [gif](demos/ubuntu-bluefin.gif) · [verify](demos/ubuntu-bluefin.verify.txt) · [desktop](demos/ubuntu-bluefin-desktop.png) |
-| Ultramarine 44 GNOME, as above | Bluefin | toolbox | **11/11**³ (506 packages in a Fedora toolbox) | [cast](demos/ultramarine-bluefin-toolbox.cast) · [gif](demos/ultramarine-bluefin-toolbox.gif) · [verify](demos/ultramarine-bluefin-toolbox.verify.txt) |
+| Fedora 44 Cloud (btrfs subvols, nginx, sshd tweak) | Fedora Silverblue 44 | image | **21/21** (htop/nginx/tmux layered, follows `quay.io/fedora/fedora-silverblue:44`) | [cast](demos/fedora-silverblue.cast) · [gif](demos/fedora-silverblue.gif) · [verify](demos/fedora-silverblue.verify.txt) |
+| …then `plexy rollback` | Fedora 44 Cloud again | — | **14/14** | [verify](demos/fedora-rollback.verify.txt) |
+| …or `plexy switch` from that Silverblue (already image-based) | Bluefin | image | **17/17** first boot (unverified origin), **15/15** next boot (signed origin, `uupd` works) | [cast](demos/silverblue-bluefin.cast) · [verify](demos/silverblue-bluefin.verify.txt) · [next boot](demos/silverblue-bluefin-reboot.verify.txt) |
+| Fedora 44 Cloud, `plan` → `build` → `apply` with `--customize` | Silverblue (local derived image) | image | **19/19** (custom step present, `plexy-update.timer` enabled) | [cast](demos/fedora-split.cast) · [verify](demos/fedora-split.verify.txt) |
+| Fedora 44 Cloud | fedora-bootc 44 (local derived image) | image | **17/17**; `plexy update` rebuilt, staged and booted a changed image: **11/11** | [verify](demos/fedora-bootc.verify.txt) · [update](demos/fedora-bootc-update.verify.txt) |
+| Ultramarine 44 GNOME (ext4, RPM Fusion, Terra, GNOME ext., dconf, Flatpak) | Bluefin | hybrid | **19/19**¹, next boot **11/11** (signed origin, `uupd` works) | [cast](demos/ultramarine-bluefin.cast) · [gif](demos/ultramarine-bluefin.gif) · [verify](demos/ultramarine-bluefin.verify.txt) · [next boot](demos/ultramarine-bluefin-reboot.verify.txt) · [VLC → Flathub](demos/ultramarine-bluefin-vlc-flatpak.png) |
+| Ultramarine 44 GNOME, as above | Bluefin | toolbox | **11/11**³ (506 packages in a Fedora toolbox); `plexy export` **5/5** | [cast](demos/ultramarine-bluefin-toolbox.cast) · [gif](demos/ultramarine-bluefin-toolbox.gif) · [verify](demos/ultramarine-bluefin-toolbox.verify.txt) · [export](demos/ultramarine-export.verify.txt) |
+| Ubuntu 26.04 GNOME (ext4, apt, nginx/tmux/neovim, Firefox snap) | Bluefin | hybrid | **20/20**² (deb → rpm, autologin session, Homebrew tools) | [cast](demos/ubuntu-bluefin.cast) · [gif](demos/ubuntu-bluefin.gif) · [verify](demos/ubuntu-bluefin.verify.txt) |
 | Ubuntu 26.04 GNOME, second disk | Vanilla OS 3.0 (ABRoot A/B) | image | **15/15** (incl. GDM autologin session) | [cast](demos/ubuntu-vanilla.cast) · [gif](demos/ubuntu-vanilla.gif) · [verify](demos/ubuntu-vanilla.verify.txt) |
-| Debian 13 cloud (ext4, apt, nginx/tmux/neovim/ripgrep) | Bluefin | hybrid | **17/17** (cross-family: deb → rpm, incl. Homebrew tools) | [cast](demos/debian-bluefin.cast) · [gif](demos/debian-bluefin.gif) · [verify](demos/debian-bluefin.verify.txt) |
+| Debian 13 cloud (ext4, apt, nginx/tmux/neovim/ripgrep) | Bluefin | hybrid | **19/19** (deb → rpm, Homebrew tools); after `plexy cleanup` and a reboot **20/20** (signed origin, `uupd` works) | [cast](demos/debian-bluefin.cast) · [verify](demos/debian-bluefin.verify.txt) · [cleanup](demos/debian-cleanup.verify.txt) |
+| Debian 13, `plexy --dry-run migrate` | — | — | **passes**: no `/ostree`, `/boot` and the ESP unchanged | [check](demos/debian-dryrun.check.txt) |
+| Ultramarine 44 on its original 40 GB disk | Bluefin | toolbox | **refused before building** (19.0 GiB free, 20.4 needed), system untouched | [cast](demos/ultra40-refusal.cast) · [check](demos/ultra40-refusal.check.txt) |
 
-¹ alice's migrated password unlocks her session, and her dconf settings (dark mode, enabled
-extensions) apply. VLC, an RPM Fusion package, runs as `org.videolan.VLC` from Flathub. `nvim`
-and `rg` are installed by Homebrew at first login and linked into `~/.local/bin`, because Bluefin
-puts Homebrew on PATH only in interactive shells. A login shell runs them, as verified. Cockpit is layered into the derived image
-with its socket enabled. An earlier run scored 13/14: its one failure was a harness ssh session
-scope, not a migration defect.
+Updates on client-layered systems go through rpm-ostree, which is what `uupd` on Universal Blue
+uses. `bootc upgrade` refuses deployments that have layered packages. `bootc status` therefore
+shows no image after the signed rebase, which is expected.
 
-² The Firefox snap became the `org.mozilla.firefox` Flatpak, and tester's GDM autologin session
-and tmux config carried over. SELinux is enforcing with 9 AVC denials on that boot, down from 51
-(see docs/RESEARCH.md): 6 are Bluefin's own `tuned` running `chcon` (`mac_admin`), and 3 are
-`bootupctl` reading `/sysroot/.bootc-aleph.json`, which `bootc install` writes as `default_t` (a
-permissive domain, an upstream policy gap). None of them involve migrated data.
+¹ alice's migrated password unlocks her autologin session, and her dconf settings apply. VLC, an
+RPM Fusion package, runs as `org.videolan.VLC` from Flathub. Cockpit is layered with rpm-ostree
+and its socket enabled. `nvim` and `rg` come from Homebrew at first login and are linked into
+`~/.local/bin`, because Bluefin puts Homebrew on PATH only in interactive shells. A non-interactive
+login shell runs them. SELinux is enforcing with 11 AVC denials that boot.
+
+² The Firefox snap became the `org.mozilla.firefox` Flatpak, and nginx is layered from Fedora's
+repositories. SELinux is enforcing with 9 AVC denials, down from 51 in the first runs. In an
+earlier run they were 6 from Bluefin's own `tuned` running `chcon` (`mac_admin`) and 3 from
+`bootupctl` reading `/sysroot/.bootc-aleph.json`, which `bootc install` labels `default_t`. None
+involved migrated data. Debian → Bluefin logged 21 and Fedora → Silverblue 7; those have not been
+analysed one by one.
 
 ³ On a 60 GB disk. Toolbox mode needs room for the old OS (kept for rollback), the new
-deployment and each user's unpacked toolbox at once. The original 40 GB disk ran out at first
-login. By the current space estimate (19.4 GiB needed, 19.0 free), plexy would refuse that disk
-before building. That is computed, not re-run.
+deployment and each user's unpacked toolbox at once. The original 40 GB disk is refused before
+building, as the last row shows.
 
 Plexy also refuses to change your desktop: on a GNOME host, `plexy diff --target aurora` (KDE) stops with
 an explanation, and `--target auto` picks a GNOME image

@@ -5,7 +5,7 @@
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted ostree
-           Commit: 18da971106fd9b11fe3904f206c5855725c432e0bf006b122b1a1c6f0023c195
+           Commit: d968c5666f973aba42a2592043944dc48687593ad49fcd6a4c325fc962570ab4
 
   Rollback image: ghcr.io/ublue-os/bluefin:stable
           Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)

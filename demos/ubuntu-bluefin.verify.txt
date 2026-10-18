@@ -8,7 +8,7 @@ PASS  graphical session of tester on seat0
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
   Staged ostree
-         Commit: 6e5b4799d2131b611c36d05d9790de2518a7a6c8387789d365dd968dbe6b75a7
+         Commit: b4360b534141b8fbbf755998acc469c8a3d5cc090bb1e88f6036a7db724a8a17
 
 ● Booted image: ghcr.io/ublue-os/bluefin:stable
         Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
@@ -28,7 +28,7 @@ PASS  unit sshd.service active
 PASS  flatpak org.mozilla.firefox
 PASS  /etc/gdm/custom.conf contains 'AutomaticLogin=tester'
 PASS  no failed units
-   SELinux: Enforcing, AVC denials this boot: 12
+   SELinux: Enforcing, AVC denials this boot: 9
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
    firstboot: installed Flatpaks: org.mozilla.firefox

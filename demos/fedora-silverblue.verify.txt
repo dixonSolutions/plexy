@@ -9,7 +9,7 @@ PASS  layered package tmux
 PASS  os is Silverblue
 PASS  booted from an ostree/bootc deployment
   Staged ostree
-         Commit: e24bf25e5e49f428e9fcccff1280d5d49cc1a43f8513f39d17abf0aee2104d2e
+         Commit: bf78ec1593d9e1e1f95c1d8e1769487aaf20f658081a077aed9839f2226a3308
 
 ● Booted image: quay.io/fedora/fedora-silverblue:44
         Digest: sha256:5ee12048ae59842893aa83e84466e2bea833ea0981f128af8043f3859f6ed9e7 (amd64)

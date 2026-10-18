@@ -8,7 +8,7 @@ PASS  layered package nginx
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted ostree
-           Commit: 4bb6e2c2c55521b95e1b38594493262a420c03bf7d4fdde20ea149dc2e21668e
+           Commit: ec4e50b92f7ea45b3ed2f840875c03ccb311a46e78661cb7a357b195cfc45fb1
 
   Rollback image: ghcr.io/ublue-os/bluefin:stable
           Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)

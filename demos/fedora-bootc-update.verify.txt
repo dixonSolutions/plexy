@@ -3,11 +3,11 @@ PASS  booted image containers-storage localhost/plexy/fedora-bootc:fed1
 PASS  os is Fedora
 PASS  booted from an ostree/bootc deployment
 ● Booted image: containers-storage:localhost/plexy/fedora-bootc:fed1
-        Digest: sha256:434e78a5467fc92403e59c7170e23a1426f58598e91ee118f7f13bc490fa096d (amd64)
-       Version: 44.20261017.0 (2026-10-18T00:55:54Z)
+        Digest: sha256:c8afad4e45f084427bce68cbe7a2c8f6477b52ecf742734c324a2db930bb9d08 (amd64)
+       Version: 44.20261017.0 (2026-10-18T01:24:11Z)
 
   Rollback image: containers-storage:localhost/plexy/fedora-bootc:fed1
-          Digest: sha256:17ed75b23d010495ac4050cfcfd465ceced0e319a417d389efcc3f5772603348 (amd64)
+          Digest: sha256:f57f40ff0f2fb5d961cb220ef2c673b71045a45f4f2a3bdff1eeb0cb910c8a57 (amd64)
 PASS  file /etc/plexy-update-marker
 PASS  command htop
 PASS  command tmux
