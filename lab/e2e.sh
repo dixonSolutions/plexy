@@ -104,7 +104,7 @@ VM[fedora-kde-aurora]=fedk1
 ARGS[fedora-kde-aurora]="--target aurora --mode hybrid"
 EXPECT[fedora-kde-aurora]='EXPECT_WAITFILE="/var/lib/plexy/layer.done /var/home/tester/.local/state/plexy/firstlogin.done" EXPECT_SESSION=tester
 EXPECT_OS=Aurora EXPECT_USERS=tester EXPECT_GROUPS=tester:wheel EXPECT_FILES="/var/home/tester/Documents/notes.txt /etc/tmux.conf"
-EXPECT_ACTIVE="sddm.service sshd.service" EXPECT_USERCMDS="tester:nvim:--version"
+EXPECT_ACTIVE="display-manager.service sshd.service" EXPECT_USERCMDS="tester:nvim:--version"
 EXPECT_GREP="/var/home/tester/.config/kdeglobals:BreezeDark"'
 
 # Debian 13 Cinnamon: no image-based target ships Cinnamon; plexy must refuse.

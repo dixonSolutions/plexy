@@ -1,12 +1,13 @@
-# Fedora 44 with KDE Plasma, SDDM autologin for tester, dark theme, CLI tools.
+# Fedora 44 KDE Plasma as a user has it after first-boot setup: Plasma Login
+# Manager with autologin for tester, Breeze Dark, a few CLI tools.
 set -e
 dnf -y -q install @kde-desktop-environment
-dnf -y -q install htop tmux neovim podman sddm
-test -e /usr/lib/systemd/system/sddm.service
-systemctl enable sddm
+dnf -y -q install htop tmux neovim podman
 systemctl set-default graphical.target
-mkdir -p /etc/sddm.conf.d
-printf '[Autologin]\nUser=tester\nSession=plasma\n' > /etc/sddm.conf.d/autologin.conf
+systemctl is-enabled plasmalogin.service
+# plasma-setup removes its wizard autologin once setup is done.
+rm -f /etc/plasmalogin.conf.d/99-plasma-setup.conf
+printf '[Autologin]\nUser=tester\nSession=plasma\n' > /etc/plasmalogin.conf.d/autologin.conf
 printf 'set -g mouse on\n' > /etc/tmux.conf
 usermod -aG wheel tester
 install -d -o tester -g tester /home/tester/.config /home/tester/Documents
