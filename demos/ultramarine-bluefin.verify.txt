@@ -8,7 +8,7 @@ PASS  graphical session of alice on seat0
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
   Staged ostree
-         Commit: 2b0b151f11d6704fb1ba9e26525db82555209b8b6091881adb38845906c484b1
+         Commit: d545e1e85020161c1c263dc971f94a14d18effcc484aebc61060484247c6a207
 
 ● Booted image: ghcr.io/ublue-os/bluefin:stable
         Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)

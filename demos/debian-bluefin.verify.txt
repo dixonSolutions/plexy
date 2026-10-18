@@ -7,7 +7,7 @@ PASS  layered package nginx
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
   Staged ostree
-         Commit: 9b77b973686751f1ab176fd88441fd00bb347859acd439d70e6e8ec75a03adb8
+         Commit: 4bb6e2c2c55521b95e1b38594493262a420c03bf7d4fdde20ea149dc2e21668e
 
 ● Booted image: ghcr.io/ublue-os/bluefin:stable
         Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
@@ -27,7 +27,7 @@ PASS  unit nginx.service active
 PASS  unit sshd.service active
 PASS  /etc/tmux.conf contains 'mouse'
 PASS  no failed units
-   SELinux: Enforcing, AVC denials this boot: 18
+   SELinux: Enforcing, AVC denials this boot: 21
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
    firstboot: layered with rpm-ostree (live): nginx

@@ -1,5 +1,6 @@
 == Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
 PASS  origin ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+PASS  update check (uupd --dry-run)
 PASS  layered package cockpit
    layer: layered with rpm-ostree (live): cockpit
    layer: services enabled as on the old system: cockpit.socket
@@ -7,7 +8,7 @@ PASS  layered package cockpit
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted ostree
-           Commit: 2b0b151f11d6704fb1ba9e26525db82555209b8b6091881adb38845906c484b1
+           Commit: d545e1e85020161c1c263dc971f94a14d18effcc484aebc61060484247c6a207
 
   Rollback image: ghcr.io/ublue-os/bluefin:stable
           Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
@@ -25,4 +26,4 @@ PASS  no failed units
    firstboot: layered with rpm-ostree (live): cockpit
    firstboot: services enabled as on the old system: cockpit.socket
    firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
-== 10 passed, 0 failed
+== 11 passed, 0 failed

@@ -1,0 +1,37 @@
+== Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+PASS  origin ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+PASS  update check (uupd --dry-run)
+PASS  layered package nginx
+   layer: layered with rpm-ostree (live): nginx
+   layer: services enabled as on the old system: nginx.service
+   layer: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+PASS  os is Bluefin
+PASS  booted from an ostree/bootc deployment
+● Booted ostree
+           Commit: 4bb6e2c2c55521b95e1b38594493262a420c03bf7d4fdde20ea149dc2e21668e
+
+  Rollback image: ghcr.io/ublue-os/bluefin:stable
+          Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
+         Version: 44.20261013 (2026-10-13T01:49:54Z)
+PASS  user tester exists
+PASS  home of tester present (/home/tester)
+PASS  password hash of tester carried
+PASS  tester in group wheel
+PASS  file /var/home/tester/projects/note.txt
+PASS  file /etc/tmux.conf
+PASS  command nginx
+PASS  command htop
+PASS  command tmux
+PASS  as tester: nvim --version
+PASS  as tester: rg --version
+PASS  unit nginx.service active
+PASS  unit sshd.service active
+PASS  /etc/tmux.conf contains 'mouse'
+PASS  no failed units
+   SELinux: Enforcing, AVC denials this boot: 12
+   firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
+   firstboot: system dconf databases rebuilt
+   firstboot: layered with rpm-ostree (live): nginx
+   firstboot: services enabled as on the old system: nginx.service
+   firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+== 20 passed, 0 failed
