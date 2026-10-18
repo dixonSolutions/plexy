@@ -6,10 +6,10 @@ PASS  layered package nginx
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
   Staged ostree
-         Commit: 59472f78562ed01553faee86755def6f23f76e2ec7737d67123ae6f75988038c
+         Commit: cf82f37e552c5ee7697812c4a1bb734fc5c8b37c5c9a2c6b05d3a9ae2cd952bf
 
 ● Booted ostree
-           Commit: 7658e26296accdc0ba2f6b1314f79d2ef7e6475c6573a47b2284c2f9eb54252c
+           Commit: 801c098426c1c65e6ea2ce2fb07fa03503f4515649a0993e7b84bce943714e81
 
 PASS  user tester exists
 PASS  home of tester present (/home/tester)

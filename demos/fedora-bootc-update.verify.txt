@@ -1,0 +1,21 @@
+== Fedora Linux 44 (Forty Four) (kernel 7.2.11-200.fc44.x86_64)
+PASS  booted image containers-storage localhost/plexy/fedora-bootc:fed1
+PASS  os is Fedora
+PASS  booted from an ostree/bootc deployment
+● Booted image: containers-storage:localhost/plexy/fedora-bootc:fed1
+        Digest: sha256:434e78a5467fc92403e59c7170e23a1426f58598e91ee118f7f13bc490fa096d (amd64)
+       Version: 44.20261017.0 (2026-10-18T00:55:54Z)
+
+  Rollback image: containers-storage:localhost/plexy/fedora-bootc:fed1
+          Digest: sha256:17ed75b23d010495ac4050cfcfd465ceced0e319a417d389efcc3f5772603348 (amd64)
+PASS  file /etc/plexy-update-marker
+PASS  command htop
+PASS  command tmux
+PASS  command nginx
+PASS  unit nginx.service active
+PASS  unit plexy-update.timer enabled
+PASS  /etc/plexy-update-marker contains 'plexy-update-test'
+PASS  no failed units
+   SELinux: Enforcing, AVC denials this boot: 0
+   firstboot: Plexy migration to quay.io/fedora/fedora-bootc:44 completed first boot.
+== 11 passed, 0 failed

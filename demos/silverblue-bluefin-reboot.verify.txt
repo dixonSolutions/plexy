@@ -1,15 +1,16 @@
 == Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
 PASS  origin ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+PASS  update check (uupd --dry-run)
 PASS  layered package nginx
    layer: layered with rpm-ostree (live): nginx
    layer: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
 ● Booted ostree
-           Commit: 59472f78562ed01553faee86755def6f23f76e2ec7737d67123ae6f75988038c
+           Commit: cf82f37e552c5ee7697812c4a1bb734fc5c8b37c5c9a2c6b05d3a9ae2cd952bf
 
   Rollback ostree
-           Commit: 7658e26296accdc0ba2f6b1314f79d2ef7e6475c6573a47b2284c2f9eb54252c
+           Commit: 801c098426c1c65e6ea2ce2fb07fa03503f4515649a0993e7b84bce943714e81
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
 PASS  password hash of tester carried
@@ -28,4 +29,4 @@ PASS  no failed units
    firstboot: updates follow quay.io/fedora/fedora-silverblue:44
    firstboot: layered with rpm-ostree (live): nginx
    firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
-== 14 passed, 0 failed
+== 15 passed, 0 failed
