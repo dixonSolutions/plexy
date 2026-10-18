@@ -1,8 +1,14 @@
 == Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+   layer: layered with rpm-ostree (live): cockpit
+   layer: services enabled as on the old system: cockpit.socket
+   layer: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
-● Booted image: containers-storage:localhost/plexy/bluefin:ultra-desk
-        Digest: sha256:9ca68f58a94ca792c6a6c68dba7a45232642d33b1bc3fdc44ed4c77f731c13dd (amd64)
+  Staged ostree
+         Commit: 18da971106fd9b11fe3904f206c5855725c432e0bf006b122b1a1c6f0023c195
+
+● Booted image: ghcr.io/ublue-os/bluefin:stable
+        Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
        Version: 44.20261013 (2026-10-13T01:49:54Z)
 PASS  user alice exists
 PASS  home of alice present (/home/alice)
@@ -13,7 +19,10 @@ PASS  as alice: nvim --version
 PASS  as alice: rg --version
 PASS  unit cockpit.socket enabled
 PASS  no failed units
-   SELinux: Enforcing, AVC denials this boot: 8
+   SELinux: Enforcing, AVC denials this boot: 11
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
+   firstboot: layered with rpm-ostree (live): cockpit
+   firstboot: services enabled as on the old system: cockpit.socket
+   firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
 == 11 passed, 0 failed

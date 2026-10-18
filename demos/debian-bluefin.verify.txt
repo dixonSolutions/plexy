@@ -1,8 +1,16 @@
 == Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+PASS  booted image registry ghcr.io/ublue-os/bluefin:stable
+PASS  layered package nginx
+   layer: layered with rpm-ostree (live): nginx
+   layer: services enabled as on the old system: nginx.service
+   layer: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
-● Booted image: containers-storage:localhost/plexy/bluefin:deb1
-        Digest: sha256:1cc090d0ff6babf4171a753f0b530838fcbff248722e899b57911f2f7ef9448c (amd64)
+  Staged ostree
+         Commit: 97fef5a611abe818791c7d27467a1a1627d2d9158b93a8728b8278950737664d
+
+● Booted image: ghcr.io/ublue-os/bluefin:stable
+        Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
        Version: 44.20261013 (2026-10-13T01:49:54Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
@@ -22,4 +30,7 @@ PASS  no failed units
    SELinux: Enforcing, AVC denials this boot: 18
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
-== 17 passed, 0 failed
+   firstboot: layered with rpm-ostree (live): nginx
+   firstboot: services enabled as on the old system: nginx.service
+   firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+== 19 passed, 0 failed

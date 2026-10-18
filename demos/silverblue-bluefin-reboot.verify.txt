@@ -1,0 +1,31 @@
+== Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+PASS  origin ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+PASS  layered package nginx
+   layer: layered with rpm-ostree (live): nginx
+   layer: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+PASS  os is Bluefin
+PASS  booted from an ostree/bootc deployment
+● Booted ostree
+           Commit: 59472f78562ed01553faee86755def6f23f76e2ec7737d67123ae6f75988038c
+
+  Rollback ostree
+           Commit: 7658e26296accdc0ba2f6b1314f79d2ef7e6475c6573a47b2284c2f9eb54252c
+PASS  user tester exists
+PASS  home of tester present (/home/tester)
+PASS  password hash of tester carried
+PASS  file /var/home/tester/projects/note.txt
+PASS  command htop
+PASS  command tmux
+PASS  command nginx
+PASS  unit nginx.service active
+PASS  unit sshd.service active
+PASS  no failed units
+   SELinux: Enforcing, AVC denials this boot: 3
+   firstboot: Plexy migration to quay.io/fedora/fedora-silverblue:44 completed first boot.
+   firstboot: system dconf databases rebuilt
+   firstboot: layered with rpm-ostree (live): htop nginx tmux
+   firstboot: services enabled as on the old system: nginx.service
+   firstboot: updates follow quay.io/fedora/fedora-silverblue:44
+   firstboot: layered with rpm-ostree (live): nginx
+   firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+== 14 passed, 0 failed

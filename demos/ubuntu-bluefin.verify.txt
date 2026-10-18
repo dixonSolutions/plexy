@@ -1,9 +1,17 @@
 == Bluefin (Version: 44.20261013) (kernel 7.2.5-200.fc44.x86_64)
+PASS  booted image registry ghcr.io/ublue-os/bluefin:stable
+PASS  layered package nginx
+   layer: layered with rpm-ostree (live): nginx
+   layer: services enabled as on the old system: nginx.service
+   layer: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
 PASS  graphical session of tester on seat0
 PASS  os is Bluefin
 PASS  booted from an ostree/bootc deployment
-● Booted image: containers-storage:localhost/plexy/bluefin:ubu1
-        Digest: sha256:7c1c4c225170ba32853880b901b508f3527b2f1461a02f528ad84dbf52db4e5c (amd64)
+  Staged ostree
+         Commit: 6e5b4799d2131b611c36d05d9790de2518a7a6c8387789d365dd968dbe6b75a7
+
+● Booted image: ghcr.io/ublue-os/bluefin:stable
+        Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
        Version: 44.20261013 (2026-10-13T01:49:54Z)
 PASS  user tester exists
 PASS  home of tester present (/home/tester)
@@ -24,4 +32,7 @@ PASS  no failed units
    firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
    firstboot: system dconf databases rebuilt
    firstboot: installed Flatpaks: org.mozilla.firefox
-== 18 passed, 0 failed
+   firstboot: layered with rpm-ostree (live): nginx
+   firstboot: services enabled as on the old system: nginx.service
+   firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+== 20 passed, 0 failed

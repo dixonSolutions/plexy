@@ -1,0 +1,3 @@
+os: Debian GNU/Linux 13 (trixie)
+PASS no /ostree
+PASS /boot unchanged
