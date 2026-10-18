@@ -223,6 +223,10 @@ pub struct Plan {
     /// Registry status of this conversion (verified / untested / ...).
     #[serde(default)]
     pub conversion_status: Option<String>,
+    /// The target's /usr/local is inside the read-only image: plexy itself
+    /// is baked into the derived image so its first-boot units can run.
+    #[serde(default)]
+    pub plexy_in_image: bool,
 }
 
 impl Plan {
@@ -953,6 +957,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         update_signed: false,
         layering: crate::registry::Layering::Image,
         conversion_status: None,
+        plexy_in_image: t.usr_local_in_usr && backend == Backend::Bootc,
     })
 }
 

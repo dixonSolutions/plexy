@@ -108,6 +108,11 @@ updates is set per target in the registry (`layering`):
 > (`plexy switch`): after the second boot the Bluefin guests follow
 > `ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable`, layered packages intact.
 
+With `client` layering, updates go through rpm-ostree (Universal Blue's `uupd`, or
+`rpm-ostree upgrade`); `bootc upgrade` refuses a deployment that has layered packages. On images
+whose `/usr/local` is part of the read-only image (fedora-bootc), Plexy bakes itself into the
+derived image so its first-boot units can run.
+
 `plexy update` explains the method on any migrated system. `--customize` needs a derived image, so
 it switches a `client` target to `image` layering.
 

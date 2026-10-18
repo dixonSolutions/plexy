@@ -110,6 +110,12 @@ pub fn system_containerfile(m: &Manifest, plan: &Plan, ctx: &Path) -> Result<Pat
     if !pkgs.is_empty() {
         cf.push(install_cmd(plan.target_family, &pkgs, false));
     }
+    if plan.plexy_in_image {
+        // /usr/local is read-only on this target: plexy's first-boot units
+        // need the binary inside the image (it also survives rebuilds).
+        fs::copy("/proc/self/exe", ctx.join("plexy"))?;
+        cf.push("COPY plexy /usr/local/bin/plexy".into());
+    }
     if plan.target_family == Family::Fedora {
         cf.push("RUN bootc container lint || true".into());
     }

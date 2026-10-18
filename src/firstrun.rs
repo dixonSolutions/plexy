@@ -130,7 +130,9 @@ pub fn update(force: bool) -> Result<()> {
                 plan.remote()
             );
             println!(
-                "Update with `rpm-ostree upgrade` (or `bootc upgrade` when nothing is layered); the OS's own update timer does this too."
+                "Updates go through rpm-ostree, not bootc: the OS's updater (uupd on Universal Blue, \
+                 rpm-ostreed-automatic elsewhere) or `rpm-ostree upgrade`. `bootc upgrade` refuses a \
+                 deployment with layered packages."
             );
             return Ok(());
         }
@@ -149,6 +151,10 @@ pub fn update(force: bool) -> Result<()> {
             "no build context at {} to rebuild the system image from",
             ctx.display()
         );
+    }
+    // Rebuilds keep the plexy that is running now when it is baked in.
+    if ctx.join("plexy").exists() {
+        fs::copy("/proc/self/exe", ctx.join("plexy"))?;
     }
     let remote = plan.remote().to_string();
     util::run_visible("podman", &["pull", &remote])?;

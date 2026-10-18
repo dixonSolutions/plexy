@@ -1302,7 +1302,9 @@ fn install_hooks(
         return Ok(());
     }
     // /proc/self/exe stays valid even after /usr/local (and this binary) moved.
-    install_self(&new_var.join("usrlocal/bin/plexy"))?;
+    if !plan.plexy_in_image {
+        install_self(&new_var.join("usrlocal/bin/plexy"))?;
+    }
     write_file(
         &root_join(deploy, "/etc/systemd/system/plexy-firstboot.service"),
         FIRSTBOOT_UNIT,

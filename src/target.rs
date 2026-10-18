@@ -47,6 +47,10 @@ pub struct ImageFacts {
     pub has_rpm_ostree: bool,
     pub bootc_label: bool,
     pub selinux: bool,
+    /// /usr/local is part of the read-only image (fedora-bootc), not a
+    /// symlink into /var: anything installed there must be baked into it.
+    #[serde(default)]
+    pub usr_local_in_usr: bool,
 }
 
 pub fn pull(image: &str) -> Result<()> {
@@ -78,6 +82,7 @@ for t in distrobox toolbox flatpak brew bootc abroot rpm-ostree; do command -v $
 [ -e /usr/share/homebrew.tar.zst ] && echo brew-bundle
 [ -d /home/linuxbrew/.linuxbrew ] && echo brew-bundle
 [ -d /usr/share/abroot ] && echo abroot
+[ -L /usr/local ] || echo usrlocal-in-usr
 [ -e /etc/abroot/abroot.json ] && echo abroot
 [ -d /usr/share/selinux/targeted ] || [ -d /etc/selinux/targeted ] && echo selinux
 sec end
@@ -174,6 +179,7 @@ pub fn parse_facts(out: &str) -> ImageFacts {
                 "brew" | "brew-bundle" => f.has_brew = true,
                 "rpm-ostree" => f.has_rpm_ostree = true,
                 "selinux" => f.selinux = true,
+                "usrlocal-in-usr" => f.usr_local_in_usr = true,
                 _ => {}
             },
             _ => {}
@@ -231,5 +237,9 @@ mod tests {
         assert_eq!(f.desktop.display_manager.as_deref(), Some("gdm"));
         assert!(f.has_distrobox && f.has_flatpak && f.has_brew && f.selinux && !f.has_toolbox);
         assert!(f.group.contains("wheel"));
+        assert!(!f.usr_local_in_usr);
+        let bootc =
+            parse_facts("@@@os\nID=fedora\n@@@tools\nusrlocal-in-usr\nrpm-ostree\n@@@end\n");
+        assert!(bootc.usr_local_in_usr && bootc.has_rpm_ostree);
     }
 }

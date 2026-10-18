@@ -655,6 +655,12 @@ fn apply_registry(
             };
         }
     }
+    if p.plexy_in_image && p.layering == registry::Layering::Client {
+        info(
+            "this image's /usr/local is read-only: plexy is baked into a derived image (layering into it instead of client-side)",
+        );
+        p.layering = registry::Layering::Image;
+    }
     if t.customize.is_some() && p.layering == registry::Layering::Client {
         info(
             "--customize needs a derived image: layering into a local image instead of client-side",
