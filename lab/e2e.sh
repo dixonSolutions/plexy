@@ -79,6 +79,17 @@ EXPECT_OUTPUT[ultra40-refusal]='GiB needed'
 VM[debian-cleanup]=deb1
 VM[ultramarine-export]=ultra1
 VM[ultramarine-bluefin-reboot]=ultra1
+
+# Ultramarine running linux-surface's kernel (snapshot loaded-surface, see
+# lab/README.md) -> Bluefin keeping that kernel. The first boot runs Bluefin's
+# kernel and stages the override; -reboot boots kernel-surface and finishes.
+VM[ultramarine-surface]=ultra1
+SNAP[ultramarine-surface]=loaded-surface
+ARGS[ultramarine-surface]="--target bluefin --mode hybrid --keep-kernel"
+EXPECT[ultramarine-surface]='EXPECT_WAITFILE=/var/lib/plexy/layer.log EXPECT_OS=Bluefin EXPECT_USERS=alice
+EXPECT_LAYERED="kernel-surface kernel-surface-core kernel-surface-modules-extra iptsd libwacom-surface libwacom-surface-data"
+EXPECT_GREP="/etc/yum.repos.d/linux-surface.repo:fedora/f43/"'
+VM[ultramarine-surface-reboot]=ultra1
 VM[silverblue-bluefin-reboot]=fed1
 
 # fedora-bootc: a target that keeps a derived image; plexy-update.timer rebuilds it.
@@ -201,6 +212,21 @@ if [[ $scenario == ultramarine-bluefin-reboot ]]; then
     sleep 30
     "$L" wait "$vm" 900
     EXPECT[$scenario]='EXPECT_UPDATE_CHECK=1 EXPECT_OS=Bluefin EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable EXPECT_LAYERED=cockpit EXPECT_ENABLED=cockpit.socket EXPECT_USERS=alice EXPECT_FILES=/var/home/alice/Documents/thesis.txt'
+    L_VERIFY
+    exit
+fi
+if [[ $scenario == ultramarine-surface-reboot ]]; then
+    "$L" list | grep -q "^$vm .*running" || { "$L" start "$vm"; "$L" wait "$vm" 600; }
+    "$L" ssh "$vm" 'test -e /var/lib/plexy/layer.log' || { echo "$vm has not staged the kernel: run ultramarine-surface first" >&2; exit 1; }
+    "$L" ssh "$vm" 'systemctl reboot' || true
+    sleep 30
+    "$L" wait "$vm" 900
+    EXPECT[$scenario]='EXPECT_WAITFILE=/var/lib/plexy/layer.done EXPECT_KERNEL=surface EXPECT_OS=Bluefin
+EXPECT_ORIGIN=ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+EXPECT_RPMS="kernel-surface-core kernel-surface-modules-extra iptsd libwacom-surface libwacom-surface-data"
+EXPECT_LAYERED="kernel-surface iptsd" EXPECT_USERS=alice EXPECT_FILES=/var/home/alice/Documents/thesis.txt
+EXPECT_UPDATE_CHECK=1'
+    "$L" ssh "$vm" 'rpm-ostree status --booted' >"$LAB/run/$scenario.status.log"
     L_VERIFY
     exit
 fi

@@ -6,6 +6,7 @@
 //!   toolbox, export its apps and commands, install Homebrew formulae, and
 //!   tell the user what happened.
 
+use crate::kernel;
 use crate::plan::{Dest, Plan};
 use crate::util::{self, have, info, run, try_run, warn, write_file};
 use anyhow::{Context, Result};
@@ -134,6 +135,13 @@ pub fn update(force: bool) -> Result<()> {
                  rpm-ostreed-automatic elsewhere) or `rpm-ostree upgrade`. `bootc upgrade` refuses a \
                  deployment with layered packages."
             );
+            if let Some(k) = plan.kernel.as_ref().filter(|k| k.keep) {
+                println!(
+                    "The kernel is {} from [{}]: an rpm-ostree override, re-resolved at every update \
+                     (`rpm-ostree status` lists it).",
+                    k.base, k.repo
+                );
+            }
             return Ok(());
         }
         crate::registry::Layering::Abroot => {
@@ -208,7 +216,7 @@ pub fn layer() -> Result<()> {
         return Ok(());
     }
     let failed_before = failed_units();
-    let mut report = layer_client_side(&plan);
+    let (mut report, pending) = layer_client_side(&plan);
     // A live apply reloads systemd and can make units that were starting
     // time out; give anything that failed meanwhile a clean restart.
     let mut restarted = vec![];
@@ -236,6 +244,12 @@ pub fn layer() -> Result<()> {
         // leave layer.done absent so the service retries next boot
         anyhow::bail!("client-side layering incomplete; see {}", log.display());
     }
+    if pending {
+        // Packages staged for the next boot: run again then, to enable
+        // their services and confirm they are in the booted deployment.
+        info("finishing after the next reboot");
+        return Ok(());
+    }
     write_file(
         &Path::new(STATE).join("layer.done"),
         util::now_unix().to_string(),
@@ -256,40 +270,81 @@ fn failed_units() -> std::collections::BTreeSet<String> {
 
 /// Client-side layering (registry `layering = "client"`): the system runs the
 /// upstream image and follows its remote; the packages the plan layers are
-/// added with rpm-ostree, which keeps them across every upgrade.
-fn layer_client_side(plan: &Plan) -> Vec<String> {
+/// added with rpm-ostree, which keeps them across every upgrade. Returns the
+/// report and whether something is staged for the next boot.
+fn layer_client_side(plan: &Plan) -> (Vec<String>, bool) {
     let mut report = vec![];
-    let pkgs = plan.names_for(Dest::Image);
+    let kernel = plan.kernel.as_ref().filter(|k| k.keep);
+    let companions: Vec<String> = kernel.map(|k| k.companions.clone()).unwrap_or_default();
+    let image = plan.names_for(Dest::Image);
+    let pkgs: Vec<String> = image
+        .iter()
+        .filter(|p| !companions.contains(p))
+        .cloned()
+        .collect();
+    // Something this run staged for the next boot instead of applying live.
+    let mut staged = false;
     if !pkgs.is_empty() {
-        let mut args = vec![
-            "install",
-            "--idempotent",
-            "--allow-inactive",
-            "-y",
-            "--apply-live",
-        ];
-        args.extend(pkgs.iter().map(String::as_str));
-        match rpm_ostree(&args) {
-            Ok(_) => report.push(format!(
-                "layered with rpm-ostree (live): {}",
-                pkgs.join(" ")
-            )),
-            Err(live) => {
-                // Some packages cannot be applied live; stage them instead.
-                let mut staged = vec!["install", "--idempotent", "--allow-inactive", "-y"];
-                staged.extend(pkgs.iter().map(String::as_str));
-                match rpm_ostree(&staged) {
-                    Ok(_) => report.push(format!(
-                        "layered with rpm-ostree, active after the next reboot: {} ({live})",
-                        pkgs.join(" ")
-                    )),
-                    Err(e) => report.push(format!(
-                        "rpm-ostree could not layer {} (will retry next boot): {e}",
-                        pkgs.join(" ")
-                    )),
+        let replaced = replaced_in_base(plan, &pkgs, &ostree_state());
+        if !replaced.is_empty() {
+            // Replacing base packages is an override: staged, not live.
+            match stage(&pkgs, &replaced) {
+                Ok(_) => {
+                    staged = true;
+                    report.push(format!(
+                        "layered with rpm-ostree, active after the next reboot: {} (replacing {})",
+                        pkgs.join(" "),
+                        replaced.join(" ")
+                    ))
+                }
+                Err(e) => report.push(format!(
+                    "rpm-ostree could not layer {} (will retry next boot): {e}",
+                    pkgs.join(" ")
+                )),
+            }
+        } else {
+            let mut args = vec![
+                "install",
+                "--idempotent",
+                "--allow-inactive",
+                "-y",
+                "--apply-live",
+            ];
+            args.extend(pkgs.iter().map(String::as_str));
+            match rpm_ostree(&args) {
+                Ok(_) => report.push(format!(
+                    "layered with rpm-ostree (live): {}",
+                    pkgs.join(" ")
+                )),
+                Err(live) => {
+                    // Some packages cannot be applied live; stage them instead.
+                    match stage(&pkgs, &[]) {
+                        Ok(_) => {
+                            staged = true;
+                            report.push(format!(
+                                "layered with rpm-ostree, active after the next reboot: {} ({live})",
+                                pkgs.join(" ")
+                            ))
+                        }
+                        Err(e) => report.push(format!(
+                            "rpm-ostree could not layer {} (will retry next boot): {e}",
+                            pkgs.join(" ")
+                        )),
+                    }
                 }
             }
         }
+    }
+    if let Some(k) = kernel {
+        report.push(layer_kernel(k));
+        let with: Vec<String> = image
+            .iter()
+            .filter(|p| companions.contains(p))
+            .cloned()
+            .collect();
+        report.extend(layer_companions(plan, k, &with));
+    }
+    if !image.is_empty() {
         // Services the old system had enabled that these packages provide.
         let _ = run("systemctl", &["daemon-reload"]);
         let mut enabled = vec![];
@@ -309,16 +364,256 @@ fn layer_client_side(plan: &Plan) -> Vec<String> {
     }
     if plan.update_signed {
         let r = crate::ostree_ref(plan.remote(), true);
-        match rpm_ostree(&["rebase", &r]) {
-            Ok(_) => report.push(format!(
-                "updates now follow {r} (signature verified; active after the next reboot)"
-            )),
-            Err(e) => report.push(format!("could not switch to the signed reference {r}: {e}")),
+        if ostree_state().origin == r {
+            report.push(format!("updates follow {r}"));
+        } else {
+            match rpm_ostree(&["rebase", &r]) {
+                Ok(_) => report.push(format!(
+                    "updates now follow {r} (signature verified; active after the next reboot)"
+                )),
+                Err(e) => report.push(format!("could not switch to the signed reference {r}: {e}")),
+            }
         }
     } else {
         report.push(format!("updates follow {}", plan.remote()));
     }
-    report
+    // The kernel and its companions are never applied live: until the
+    // system boots them, layering is not finished.
+    let st = ostree_state();
+    let pending = staged
+        || kernel.is_some_and(|k| {
+            k.packages
+                .iter()
+                .chain(companions.iter())
+                .any(|p| st.requested.contains(p) && !st.booted_requested.contains(p))
+        });
+    (report, pending)
+}
+
+/// What rpm-ostree's deployments ask for: the one booted next (the first
+/// listed) and the one running now.
+#[derive(Debug, Default, PartialEq)]
+pub struct OstreeState {
+    /// Layered packages and base removals of the next boot's deployment.
+    pub requested: std::collections::BTreeSet<String>,
+    pub removed: std::collections::BTreeSet<String>,
+    /// Layered packages of the booted deployment.
+    pub booted_requested: std::collections::BTreeSet<String>,
+    /// Image reference the next boot's deployment follows.
+    pub origin: String,
+}
+
+pub fn parse_ostree_state(js: &str) -> OstreeState {
+    let v: serde_json::Value = serde_json::from_str(js).unwrap_or_default();
+    let deps = v
+        .get("deployments")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let names = |d: Option<&serde_json::Value>, key: &str| {
+        d.and_then(|d| d.get(key))
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let next = deps.first();
+    let booted = deps
+        .iter()
+        .find(|d| d.get("booted").and_then(|b| b.as_bool()) == Some(true));
+    OstreeState {
+        requested: names(next, "requested-packages"),
+        removed: names(next, "requested-base-removals"),
+        booted_requested: names(booted, "requested-packages"),
+        origin: next
+            .and_then(|d| d.get("container-image-reference"))
+            .and_then(|s| s.as_str())
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+fn ostree_state() -> OstreeState {
+    parse_ostree_state(&try_run("rpm-ostree", &["status", "--json"]).unwrap_or_default())
+}
+
+/// Base packages that `pkgs` replace (unversioned Conflicts/Obsoletes) and
+/// that the next deployment still has.
+fn replaced_in_base(plan: &Plan, pkgs: &[String], st: &OstreeState) -> Vec<String> {
+    let want: std::collections::BTreeSet<String> = plan
+        .packages
+        .iter()
+        .filter(|p| p.dest == Dest::Image && p.target_names.iter().any(|n| pkgs.contains(n)))
+        .flat_map(|p| p.replaces.iter().cloned())
+        .filter(|r| !pkgs.contains(r) && !st.removed.contains(r) && !st.requested.contains(r))
+        .collect();
+    let want: Vec<String> = want.into_iter().collect();
+    kernel::installed(kernel::Root::Host, &want)
+        .into_iter()
+        .collect()
+}
+
+/// Stage `pkgs` for the next boot, removing `remove` from the base in the
+/// same transaction (an rpm-ostree override). Already requested packages
+/// are skipped.
+fn stage(pkgs: &[String], remove: &[String]) -> Result<String> {
+    let st = ostree_state();
+    let todo: Vec<&String> = pkgs.iter().filter(|p| !st.requested.contains(*p)).collect();
+    let mut args: Vec<String> = if remove.is_empty() {
+        ["install", "--idempotent", "--allow-inactive", "-y"]
+            .map(String::from)
+            .to_vec()
+    } else {
+        let mut a = vec!["override".to_string(), "remove".to_string()];
+        a.extend(remove.iter().cloned());
+        a
+    };
+    if remove.is_empty() {
+        if todo.is_empty() {
+            return Ok(String::new());
+        }
+        args.extend(todo.iter().map(|p| p.to_string()));
+    } else {
+        args.extend(todo.iter().map(|p| format!("--install={p}")));
+    }
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    rpm_ostree(&args)
+}
+
+/// Replace the target's kernel with the source's (`--keep-kernel`). The
+/// stock packages to remove are read from the booted deployment, so they
+/// match the image that is actually installed.
+fn layer_kernel(k: &kernel::KernelPlan) -> String {
+    let st = ostree_state();
+    if k.packages.iter().all(|p| st.requested.contains(p)) {
+        return if k.packages.iter().all(|p| st.booted_requested.contains(p)) {
+            format!("running the source kernel {}", k.base)
+        } else {
+            format!(
+                "source kernel {} staged: it starts after the next reboot",
+                k.base
+            )
+        };
+    }
+    let kver = try_run("uname", &["-r"]).unwrap_or_default();
+    let booted = match kernel::facts(kernel::Root::Host, Some(kver.trim())) {
+        Ok(Some(f)) => f,
+        Ok(None) => {
+            return format!(
+                "could not install the source kernel {}: the booted kernel {} is not from a package",
+                k.base,
+                kver.trim()
+            );
+        }
+        Err(e) => {
+            return format!(
+                "could not install the source kernel {} (will retry next boot): {e}",
+                k.base
+            );
+        }
+    };
+    if booted.base().as_deref() == Some(k.base.as_str()) {
+        // Already running it (an override made by hand): only request the rest.
+        return match stage(&k.packages, &[]) {
+            Ok(_) => format!("running the source kernel {}", k.base),
+            Err(e) => format!(
+                "could not request the source kernel's packages {} (will retry next boot): {e}",
+                k.packages.join(" ")
+            ),
+        };
+    }
+    let provides = k.provides.iter().cloned().collect();
+    let removal = match kernel::stock_removal(kernel::Root::Host, &booted, &provides) {
+        Ok(r) => r,
+        Err(e) => {
+            return format!(
+                "could not work out the target's kernel packages (will retry next boot): {e}"
+            );
+        }
+    };
+    let remove: Vec<String> = removal
+        .remove
+        .into_iter()
+        .filter(|p| !st.removed.contains(p) && !st.requested.contains(p))
+        .collect();
+    match stage(&k.packages, &remove) {
+        Ok(_) => {
+            let mut msg = format!(
+                "source kernel {} staged in place of {} {}; it starts after the next reboot",
+                k.base,
+                booted.base().unwrap_or_default(),
+                booted.kver
+            );
+            if !removal.lost.is_empty() {
+                msg.push_str(&format!(
+                    " (removed with the target's kernel: {})",
+                    removal
+                        .lost
+                        .iter()
+                        .map(|(p, _)| p.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                ));
+            }
+            msg
+        }
+        Err(e) => format!(
+            "could not install the source kernel {} (will retry next boot): {e}",
+            k.base
+        ),
+    }
+}
+
+/// The kernel's companions (iptsd, libwacom-surface, ...), in their own
+/// transaction so a companion the repository lacks for this release does
+/// not hold back the kernel. If they fail together, each source package's
+/// group is tried on its own (libwacom-surface with its -data).
+fn layer_companions(plan: &Plan, k: &kernel::KernelPlan, with: &[String]) -> Vec<String> {
+    let st = ostree_state();
+    let todo: Vec<String> = with
+        .iter()
+        .filter(|c| !st.requested.contains(*c))
+        .cloned()
+        .collect();
+    if todo.is_empty() {
+        return vec![];
+    }
+    let attempt = |names: &[String]| -> String {
+        let rm = replaced_in_base(plan, names, &ostree_state());
+        match stage(names, &rm) {
+            Ok(_) => format!(
+                "installed with the source kernel, active after the next reboot: {}{}",
+                names.join(" "),
+                if rm.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (replacing {})", rm.join(" "))
+                }
+            ),
+            Err(e) => format!(
+                "could not install {} with the source kernel (will retry next boot): {e}",
+                names.join(" ")
+            ),
+        }
+    };
+    let all = attempt(&todo);
+    if !all.starts_with("could not") || k.companion_groups.len() < 2 {
+        return vec![all];
+    }
+    k.companion_groups
+        .iter()
+        .map(|g| {
+            g.iter()
+                .filter(|c| todo.contains(c))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .filter(|g| !g.is_empty())
+        .map(|g| attempt(&g))
+        .collect()
 }
 
 fn home() -> PathBuf {
@@ -653,6 +948,24 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ostree_state_next_and_booted() {
+        let js = r#"{"deployments":[
+            {"booted":false,"requested-packages":["iptsd","kernel-surface"],
+             "requested-base-removals":["kernel","kernel-core"],
+             "container-image-reference":"ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable"},
+            {"booted":true,"requested-packages":["htop"],"requested-base-removals":[],
+             "container-image-reference":"ostree-unverified-registry:ghcr.io/ublue-os/bluefin:stable"}]}"#;
+        let st = parse_ostree_state(js);
+        assert!(st.requested.contains("kernel-surface") && st.removed.contains("kernel-core"));
+        assert!(st.booted_requested.contains("htop") && !st.booted_requested.contains("iptsd"));
+        assert_eq!(
+            st.origin,
+            "ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable"
+        );
+        assert_eq!(parse_ostree_state(""), OstreeState::default());
+    }
 
     #[test]
     fn staged_deployment_detection() {

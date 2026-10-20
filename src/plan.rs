@@ -148,6 +148,11 @@ pub struct PlannedPkg {
     pub origin: String,
     #[serde(default)]
     pub traits: PkgTraits,
+    /// Packages it replaces (unversioned Conflicts/Obsoletes, e.g.
+    /// libwacom-surface → libwacom): removed from the target's base when
+    /// it ships them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -227,6 +232,9 @@ pub struct Plan {
     /// is baked into the derived image so its first-boot units can run.
     #[serde(default)]
     pub plexy_in_image: bool,
+    /// The source's own kernel, when the target ships a different one.
+    #[serde(default)]
+    pub kernel: Option<crate::kernel::KernelPlan>,
 }
 
 impl Plan {
@@ -522,6 +530,9 @@ pub struct PlanInputs<'a> {
     pub allow_desktop_change: bool,
     /// Route packages that came with the old OS like user-installed ones.
     pub include_preinstalled: bool,
+    /// package -> packages it replaces (unversioned Conflicts/Obsoletes).
+    pub replaces: BTreeMap<String, Vec<String>>,
+    pub kernel: Option<crate::kernel::KernelPlan>,
 }
 
 pub fn build(inp: PlanInputs) -> Result<Plan> {
@@ -614,6 +625,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             why: String::new(),
             origin: origin.into(),
             traits: traits.clone(),
+            replaces: vec![],
         };
         if is_infrastructure(&name) || is_distro_identity(&name, &m.os.id) {
             p.why =
@@ -666,10 +678,15 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
             None
         };
 
+        let replaces = match from == to {
+            true => inp.replaces.get(&name).cloned().unwrap_or_default(),
+            false => vec![],
+        };
         let route_host = |p: &mut PlannedPkg, why: &str| {
             if image_ok {
                 p.dest = Dest::Image;
                 p.target_names = image_names.clone();
+                p.replaces = replaces.clone();
                 p.why = why.into();
             } else {
                 p.dest = Dest::Skip;
@@ -759,6 +776,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
                     why: "snaps are not supported on the target; Flathub equivalent".into(),
                     origin: "user".into(),
                     traits: PkgTraits::default(),
+                    replaces: vec![],
                 });
             }
             None => warnings.push(format!(
@@ -930,7 +948,7 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         inp.target_name.replace(['/', ':', '.'], "-"),
         m.hostname_tag()
     );
-    Ok(Plan {
+    let mut plan = Plan {
         plexy_version: env!("CARGO_PKG_VERSION").into(),
         created: util::now_unix(),
         mode: inp.mode,
@@ -958,7 +976,98 @@ pub fn build(inp: PlanInputs) -> Result<Plan> {
         layering: crate::registry::Layering::Image,
         conversion_status: None,
         plexy_in_image: t.usr_local_in_usr && backend == Backend::Bootc,
-    })
+        kernel: inp.kernel,
+    };
+    let companions: Vec<crate::kernel::Companion> = m
+        .kernel
+        .as_ref()
+        .map(|k| k.companions.clone())
+        .unwrap_or_default();
+    apply_kernel(&mut plan, &companions);
+    Ok(plan)
+}
+
+/// Route the source kernel's packages and companions by `plan.kernel.keep`:
+/// kept, the companions are layered with it (adding the ones that were only
+/// dependencies on the old system, from `companions`); otherwise they stay
+/// behind with the kernel. Called again when the review toggles it.
+pub fn apply_kernel(plan: &mut Plan, companions: &[crate::kernel::Companion]) {
+    let Some(k) = plan.kernel.clone() else {
+        return;
+    };
+    let skipped: BTreeMap<&str, &str> = k
+        .skipped
+        .iter()
+        .map(|(n, w)| (n.as_str(), w.as_str()))
+        .collect();
+    for p in plan.packages.iter_mut() {
+        if k.packages.contains(&p.name) {
+            p.dest = Dest::Skip;
+            p.target_names = vec![];
+            p.why = if k.keep {
+                format!(
+                    "source kernel: replaces {} {} through an rpm-ostree override",
+                    k.target_base, k.target_kver
+                )
+            } else {
+                "boot chain: the target's own kernel replaces it (--keep-kernel keeps it)".into()
+            };
+        } else if k.companions.contains(&p.name) {
+            if k.keep {
+                p.dest = Dest::Image;
+                p.target_names = vec![p.name.clone()];
+                p.why = format!(
+                    "installed with the source kernel {} (from {})",
+                    k.base, k.repo
+                );
+            } else {
+                p.dest = Dest::Skip;
+                p.why = format!(
+                    "belongs to the source kernel {}, which is not kept (--keep-kernel keeps it)",
+                    k.base
+                );
+            }
+        } else if let Some(why) = skipped.get(p.name.as_str()) {
+            p.dest = Dest::Skip;
+            p.why = why.to_string();
+        }
+    }
+    if k.keep {
+        for c in companions.iter().filter(|c| k.companions.contains(&c.name)) {
+            if plan.packages.iter().any(|p| p.name == c.name) {
+                continue;
+            }
+            plan.packages.push(PlannedPkg {
+                name: c.name.clone(),
+                dest: Dest::Image,
+                target_names: vec![c.name.clone()],
+                why: format!(
+                    "installed with the source kernel {} (from {})",
+                    k.base, k.repo
+                ),
+                origin: "preinstalled".into(),
+                traits: PkgTraits {
+                    host_level: c.host_level,
+                    ..Default::default()
+                },
+                replaces: c.replaces.clone(),
+            });
+        }
+        if let Some(f) = &k.repo_file
+            && !plan.repo_files.contains(f)
+        {
+            plan.repo_files.push(f.clone());
+        }
+    }
+    for p in plan.packages.iter_mut() {
+        if let Some(c) = companions.iter().find(|c| c.name == p.name)
+            && p.replaces.is_empty()
+        {
+            p.replaces = c.replaces.clone();
+        }
+    }
+    plan.packages
+        .sort_by(|a, b| a.dest.cmp(&b.dest).then(a.name.cmp(&b.name)));
 }
 
 /// Service names that differ between the Debian and Fedora families.
@@ -1174,19 +1283,93 @@ pub fn print_summary(p: &Plan) {
             tb.engine, tb.name, tb.base_image
         );
     }
+    if let Some(k) = &p.kernel {
+        print_kernel(k);
+    }
     for w in &p.warnings {
         warn(w);
     }
     println!();
 }
 
+fn print_kernel(k: &crate::kernel::KernelPlan) {
+    println!();
+    println!(
+        "  kernel : this system runs {} {} (from {}); the target ships {} {}",
+        k.base,
+        k.source_kver,
+        if k.repo.is_empty() { "?" } else { &k.repo },
+        k.target_base,
+        k.target_kver
+    );
+    if !k.keep {
+        match &k.blocked {
+            Some(b) => println!("           the target's kernel is used: {b}"),
+            None => println!(
+                "           the target's kernel is used ([k] in the review or --keep-kernel keeps {})",
+                k.base
+            ),
+        }
+        return;
+    }
+    let wrap = |label: &str, names: Vec<String>| {
+        for (i, chunk) in names.chunks(6).enumerate() {
+            println!(
+                "           {:<9}{}",
+                if i == 0 { label } else { "" },
+                chunk.join("  ")
+            );
+        }
+    };
+    println!("           kept: rpm-ostree override, replayed at every update");
+    wrap(
+        "install",
+        k.packages
+            .iter()
+            .map(|p| match k.resolved.get(p) {
+                Some(v) if *p == k.base => format!("{p} ({v})"),
+                _ => p.clone(),
+            })
+            .collect(),
+    );
+    wrap("with", k.companions.clone());
+    wrap("remove", k.remove.clone());
+    for (p, why) in &k.lost {
+        warn(format!("{p} is removed with the target's kernel: {why}"));
+    }
+    if !k.source_modules.is_empty() {
+        warn(format!(
+            "modules built for {} {} are not carried: {}",
+            k.base,
+            k.source_kver,
+            k.source_modules.join(" ")
+        ));
+    }
+    for (p, why) in &k.skipped {
+        println!("           not carried: {p} — {why}");
+    }
+    for n in &k.notes {
+        println!("           note: {n}");
+    }
+}
+
 /// Interactive review: let the user move whole groups or single packages.
-pub fn review(plan: &mut Plan, input: &mut dyn BufRead, out: &mut dyn Write) -> Result<bool> {
+pub fn review(
+    plan: &mut Plan,
+    companions: &[crate::kernel::Companion],
+    input: &mut dyn BufRead,
+    out: &mut dyn Write,
+) -> Result<bool> {
     loop {
         print_summary(plan);
         writeln!(
             out,
-            "  [a]ccept  [m]ove a package  [g]roup move  [l]ist a group  [q]uit without changes"
+            "  [a]ccept  [m]ove a package  [g]roup move  [l]ist a group{}  [q]uit without changes",
+            match &plan.kernel {
+                Some(k) if k.keep => "  [k] use the target's kernel",
+                Some(_) => "  [k]eep the source kernel",
+                None => "",
+            }
         )?;
         write!(out, "  choice> ")?;
         out.flush()?;
@@ -1197,6 +1380,14 @@ pub fn review(plan: &mut Plan, input: &mut dyn BufRead, out: &mut dyn Write) -> 
         match line.trim() {
             "a" | "" => return Ok(true),
             "q" => return Ok(false),
+            "k" if plan.kernel.is_some() => {
+                let k = plan.kernel.as_mut().unwrap();
+                match (&k.blocked, k.keep) {
+                    (Some(b), false) => writeln!(out, "  the source kernel cannot be kept: {b}")?,
+                    _ => k.keep = !k.keep,
+                }
+                apply_kernel(plan, companions);
+            }
             "l" => {
                 let d = ask_dest(input, out, "which group")?;
                 for p in plan.by_dest(d) {
@@ -1274,6 +1465,169 @@ pub fn load(path: &std::path::Path) -> Result<Plan> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::kernel::{Companion, KernelPlan};
+
+    /// A Fedora-family source running kernel-surface, planned for a target
+    /// that ships its stock kernel.
+    fn surface_plan(keep: bool) -> (Plan, Vec<Companion>) {
+        let mut m: Manifest =
+            serde_json::from_str(include_str!("../tests/data/manifest-min.json")).unwrap();
+        m.os.id = "ultramarine".into();
+        m.os.family = Family::Fedora;
+        for n in ["kernel-surface", "iptsd", "htop", "libwacom-surface"] {
+            m.packages.installed.insert(n.into(), "1-1".into());
+            m.packages.user_installed.push(crate::pkg::UserPkg {
+                name: n.into(),
+                evidence: "history".into(),
+            });
+        }
+        let companions = vec![
+            Companion {
+                name: "iptsd".into(),
+                srpm: "iptsd".into(),
+                host_level: true,
+                ..Default::default()
+            },
+            Companion {
+                name: "libwacom-surface".into(),
+                srpm: "libwacom-surface".into(),
+                replaces: vec!["libwacom".into()],
+                ..Default::default()
+            },
+            Companion {
+                name: "libwacom-surface-data".into(),
+                srpm: "libwacom-surface".into(),
+                replaces: vec!["libwacom-data".into()],
+                ..Default::default()
+            },
+        ];
+        m.kernel = Some(crate::kernel::SourceKernel {
+            companions: companions.clone(),
+            ..Default::default()
+        });
+        let t = ImageFacts {
+            image: "ghcr.io/ublue-os/bluefin:stable".into(),
+            family: Some(Family::Fedora),
+            os_id: "bluefin".into(),
+            pretty_name: "Bluefin".into(),
+            packages: ["libwacom", "libwacom-data", "bash"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            ..Default::default()
+        };
+        let mut files = BTreeMap::new();
+        files.insert(
+            "iptsd".to_string(),
+            "/usr/lib/systemd/system/iptsd@.service\n/usr/bin/iptsd\n".to_string(),
+        );
+        files.insert(
+            "libwacom-surface".to_string(),
+            "/usr/lib/udev/rules.d/65-libwacom.rules\n".to_string(),
+        );
+        let kernel = KernelPlan {
+            keep,
+            base: "kernel-surface".into(),
+            repo: "linux-surface".into(),
+            packages: vec!["kernel-surface".into(), "kernel-surface-core".into()],
+            target_base: "kernel".into(),
+            target_kver: "7.2.5-200.fc44.x86_64".into(),
+            companions: vec![
+                "iptsd".into(),
+                "libwacom-surface".into(),
+                "libwacom-surface-data".into(),
+            ],
+            repo_file: Some("/etc/yum.repos.d/linux-surface.repo".into()),
+            ..Default::default()
+        };
+        let mut replaces = BTreeMap::new();
+        replaces.insert("libwacom-surface".to_string(), vec!["libwacom".to_string()]);
+        let p = build(PlanInputs {
+            manifest: &m,
+            target: &t,
+            target_name: "bluefin".into(),
+            mode: Mode::Hybrid,
+            files,
+            brew_index: BTreeMap::new(),
+            allow_desktop_change: true,
+            include_preinstalled: false,
+            replaces,
+            kernel: Some(kernel),
+        })
+        .unwrap();
+        (p, companions)
+    }
+
+    fn dest_of(p: &Plan, n: &str) -> Option<Dest> {
+        p.packages.iter().find(|x| x.name == n).map(|x| x.dest)
+    }
+
+    #[test]
+    fn kept_kernel_layers_its_companions() {
+        let (p, _) = surface_plan(true);
+        assert_eq!(dest_of(&p, "kernel-surface"), Some(Dest::Skip));
+        assert_eq!(dest_of(&p, "iptsd"), Some(Dest::Image));
+        assert_eq!(dest_of(&p, "libwacom-surface"), Some(Dest::Image));
+        // only a dependency on the old system, added for the kernel
+        assert_eq!(dest_of(&p, "libwacom-surface-data"), Some(Dest::Image));
+        let data = p
+            .packages
+            .iter()
+            .find(|x| x.name == "libwacom-surface-data")
+            .unwrap();
+        assert_eq!(data.replaces, vec!["libwacom-data"]);
+        assert!(
+            p.repo_files
+                .contains(&"/etc/yum.repos.d/linux-surface.repo".to_string())
+        );
+        assert!(
+            p.packages
+                .iter()
+                .find(|x| x.name == "kernel-surface")
+                .unwrap()
+                .why
+                .contains("rpm-ostree override")
+        );
+    }
+
+    #[test]
+    fn dropped_kernel_leaves_its_companions_behind_and_review_toggles() {
+        let (mut p, companions) = surface_plan(false);
+        assert_eq!(dest_of(&p, "iptsd"), Some(Dest::Skip));
+        assert_eq!(dest_of(&p, "libwacom-surface-data"), None);
+        let mut out = Vec::new();
+        let mut input = std::io::Cursor::new("k\na\n");
+        assert!(review(&mut p, &companions, &mut input, &mut out).unwrap());
+        assert!(p.kernel.as_ref().unwrap().keep);
+        assert_eq!(dest_of(&p, "iptsd"), Some(Dest::Image));
+        assert_eq!(dest_of(&p, "libwacom-surface-data"), Some(Dest::Image));
+        // blocked: the toggle refuses
+        let (mut p, companions) = surface_plan(false);
+        p.kernel.as_mut().unwrap().blocked = Some("no repository".into());
+        let mut out = Vec::new();
+        let mut input = std::io::Cursor::new("k\na\n");
+        review(&mut p, &companions, &mut input, &mut out).unwrap();
+        assert!(!p.kernel.as_ref().unwrap().keep);
+        assert!(
+            String::from_utf8(out)
+                .unwrap()
+                .contains("cannot be kept: no repository")
+        );
+    }
+
+    #[test]
+    fn replacing_packages_carry_what_they_replace() {
+        let (p, _) = surface_plan(false);
+        // htop has no conflicts; nothing to replace
+        assert!(
+            p.packages
+                .iter()
+                .filter(|x| x.name == "htop")
+                .all(|x| x.replaces.is_empty())
+        );
+    }
+
     #[test]
     fn debian_mirror_file_sources_are_distro_repos() {
         let dir = std::env::temp_dir().join(format!("plexy-mirrors-{}", std::process::id()));
@@ -1316,8 +1670,6 @@ mod tests {
             Family::Debian
         ));
     }
-
-    use super::*;
 
     #[test]
     fn file_classification() {

@@ -7,6 +7,7 @@ mod apply;
 mod build;
 mod desktop;
 mod firstrun;
+mod kernel;
 mod manifest;
 mod mapping;
 mod os;
@@ -64,6 +65,11 @@ struct TargetArgs {
     /// packages, files, RUN steps) — your own adjustments to the target.
     #[arg(long, value_name = "FILE")]
     customize: Option<PathBuf>,
+    /// Keep this system's kernel when the target ships a different one
+    /// (linux-surface, a COPR kernel, ...): rpm-ostree replaces the target's
+    /// kernel with it from the repository it came from, at every update.
+    #[arg(long)]
+    keep_kernel: bool,
 }
 
 #[derive(Subcommand)]
@@ -266,7 +272,7 @@ fn real_main(cli: Cli) -> Result<()> {
             let m = manifest::scan()?;
             let (name, facts) = choose_target(&m, &t.target)?;
             let mut p = make_plan(&m, &facts, name, &t)?;
-            review_or_print(&mut p, yes)?;
+            review_or_print(&mut p, &m, yes)?;
             write_plan_dir(&m, &p, &out, t.customize.as_deref())?;
         }
         Cmd::Build { plan: dir } => {
@@ -300,7 +306,7 @@ fn real_main(cli: Cli) -> Result<()> {
             }
             let (name, facts) = choose_target(&m, &t.target)?;
             let mut p = make_plan(&m, &facts, name, &t)?;
-            review_or_print(&mut p, yes)?;
+            review_or_print(&mut p, &m, yes)?;
             let dir = PathBuf::from("/var/lib/plexy/plan");
             write_plan_dir(&m, &p, &dir, t.customize.as_deref())?;
             if p.backend == target::Backend::Bootc {
@@ -339,10 +345,15 @@ fn real_main(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn review_or_print(p: &mut plan::Plan, yes: bool) -> Result<()> {
+fn review_or_print(p: &mut plan::Plan, m: &manifest::Manifest, yes: bool) -> Result<()> {
     if !yes && std::io::stdin().is_terminal() {
         let stdin = std::io::stdin();
-        if !plan::review(p, &mut stdin.lock(), &mut std::io::stdout())? {
+        let companions = m
+            .kernel
+            .as_ref()
+            .map(|k| k.companions.clone())
+            .unwrap_or_default();
+        if !plan::review(p, &companions, &mut stdin.lock(), &mut std::io::stdout())? {
             bail!("aborted");
         }
     } else {
@@ -695,6 +706,25 @@ fn apply_registry(
         );
         p.layering = registry::Layering::Image;
     }
+    if let Some(k) = p.kernel.as_mut()
+        && p.layering != registry::Layering::Client
+        && k.blocked.is_none()
+    {
+        let why = format!(
+            "the source kernel is carried with an rpm-ostree override on top of the upstream image, \
+             but {} is layered into a derived image here{}",
+            p.target_name,
+            if t.customize.is_some() {
+                " (--customize)"
+            } else {
+                ""
+            }
+        );
+        if k.keep {
+            bail!("--keep-kernel: {why}");
+        }
+        k.blocked = Some(why);
+    }
     Ok(())
 }
 
@@ -715,6 +745,21 @@ fn make_plan_inner(
     } else {
         BTreeMap::new()
     };
+    let replaces = if m.os.family == os::Family::Fedora && !m.os.image_based {
+        let names: Vec<String> = if mode == Mode::Toolbox || t.include_preinstalled {
+            m.packages.installed.keys().cloned().collect()
+        } else {
+            m.packages
+                .user_installed
+                .iter()
+                .map(|p| p.name.clone())
+                .collect()
+        };
+        pkg::rpm_replaces(&names)
+    } else {
+        BTreeMap::new()
+    };
+    let kernel = kernel::plan(m, facts, t.keep_kernel)?;
     plan::build(plan::PlanInputs {
         manifest: m,
         target: facts,
@@ -724,6 +769,8 @@ fn make_plan_inner(
         brew_index,
         allow_desktop_change: t.allow_desktop_change,
         include_preinstalled: t.include_preinstalled,
+        replaces,
+        kernel,
     })
 }
 
@@ -1217,7 +1264,7 @@ fn switch(t: &TargetArgs, yes: bool) -> Result<()> {
     }
     let (name, facts) = choose_target(&m, &t.target)?;
     let mut p = make_plan(&m, &facts, name, t)?;
-    review_or_print(&mut p, yes)?;
+    review_or_print(&mut p, &m, yes)?;
     let dir = PathBuf::from("/var/lib/plexy/plan");
     write_plan_dir(&m, &p, &dir, t.customize.as_deref())?;
     build_all(&p, &dir)?;

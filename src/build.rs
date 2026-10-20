@@ -12,8 +12,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Install command for a build. `tolerant` (toolboxes) skips individual
-/// packages that conflict instead of failing the whole build.
-fn install_cmd(family: Family, pkgs: &[String], tolerant: bool) -> String {
+/// packages that conflict instead of failing the whole build; `replacing`
+/// lets packages that replace base packages (libwacom-surface) remove them.
+fn install_cmd(family: Family, pkgs: &[String], tolerant: bool, replacing: bool) -> String {
     let list = pkgs
         .iter()
         .map(|p| shq(p))
@@ -25,12 +26,13 @@ fn install_cmd(family: Family, pkgs: &[String], tolerant: bool) -> String {
         ),
         // Tolerant builds also ride out an unreachable third-party mirror.
         _ => format!(
-            "RUN dnf -y install --setopt=install_weak_deps=False --setopt=retries=10 --skip-unavailable{} \\\n        {list} && \\\n    dnf clean all",
+            "RUN dnf -y install --setopt=install_weak_deps=False --setopt=retries=10 --skip-unavailable{}{} \\\n        {list} && \\\n    dnf clean all",
             if tolerant {
                 " --skip-broken --setopt=skip_if_unavailable=True"
             } else {
                 ""
-            }
+            },
+            if replacing { " --allowerasing" } else { "" }
         ),
     }
 }
@@ -108,7 +110,11 @@ pub fn system_containerfile(m: &Manifest, plan: &Plan, ctx: &Path) -> Result<Pat
     }
     cf.extend(stage_repos(m, &plan.repo_files, ctx)?);
     if !pkgs.is_empty() {
-        cf.push(install_cmd(plan.target_family, &pkgs, false));
+        let replacing = plan
+            .by_dest(Dest::Image)
+            .iter()
+            .any(|p| !p.replaces.is_empty());
+        cf.push(install_cmd(plan.target_family, &pkgs, false, replacing));
     }
     if plan.plexy_in_image {
         // /usr/local is read-only on this target: plexy's first-boot units
@@ -163,7 +169,7 @@ pub fn toolbox_containerfile(m: &Manifest, plan: &Plan, ctx: &Path) -> Result<Op
     let mut pkgs = plan.names_for(Dest::Toolbox);
     pkgs.retain(|p| !crate::mapping::is_infrastructure(p));
     if !pkgs.is_empty() {
-        cf.push(install_cmd(plan.source_family, &pkgs, true));
+        cf.push(install_cmd(plan.source_family, &pkgs, true, false));
     }
     if any {
         cf.push("COPY etc-overlay/ /".into());
@@ -216,12 +222,18 @@ mod tests {
 
     #[test]
     fn install_commands_per_family() {
-        let f = install_cmd(Family::Fedora, &["htop".into(), "nginx".into()], false);
+        let f = install_cmd(
+            Family::Fedora,
+            &["htop".into(), "nginx".into()],
+            false,
+            false,
+        );
         assert!(
             f.contains("dnf -y install") && f.contains("htop") && f.contains("--skip-unavailable")
         );
-        let d = install_cmd(Family::Debian, &["htop".into()], false);
-        assert!(install_cmd(Family::Fedora, &["x".into()], true).contains("--skip-broken"));
+        let d = install_cmd(Family::Debian, &["htop".into()], false, false);
+        assert!(install_cmd(Family::Fedora, &["x".into()], true, false).contains("--skip-broken"));
+        assert!(install_cmd(Family::Fedora, &["x".into()], false, true).contains("--allowerasing"));
         assert!(d.contains("apt-get install -y") && d.contains("rm -rf /var/lib/apt/lists"));
     }
 }
