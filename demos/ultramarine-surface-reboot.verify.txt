@@ -1,0 +1,40 @@
+== Bluefin (Version: 44.20261013) (kernel 7.2.11-1.surface.fc44.x86_64)
+PASS  origin ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+PASS  update check (uupd --dry-run)
+PASS  layered package kernel-surface
+PASS  layered package iptsd
+PASS  kernel 7.2.11-1.surface.fc44.x86_64
+PASS  package kernel-surface-core installed
+PASS  package kernel-surface-modules-extra installed
+PASS  package iptsd installed
+PASS  package libwacom-surface installed
+PASS  package libwacom-surface-data installed
+   layer: layered with rpm-ostree (live): cockpit
+   layer: running the source kernel kernel-surface
+   layer: updates follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+PASS  os is Bluefin
+PASS  booted from an ostree/bootc deployment
+● Booted ostree
+           Commit: 8c9219a58e0dc0f17755ace3ba16d584aeb582fc3db22afd7d7764c657bc8568
+
+  Rollback image: ghcr.io/ublue-os/bluefin:stable
+          Digest: sha256:e4b5303ca69e80245ffd8841e4aacaa906c24a328da0621e970688faa07ce460 (amd64)
+         Version: 44.20261013 (2026-10-13T01:49:54Z)
+PASS  user alice exists
+PASS  home of alice present (/home/alice)
+PASS  password hash of alice carried
+PASS  file /var/home/alice/Documents/thesis.txt
+PASS  no failed units
+   SELinux: Enforcing, AVC denials this boot: 12
+   firstboot: Plexy migration to ghcr.io/ublue-os/bluefin:stable completed first boot.
+   firstboot: system dconf databases rebuilt
+   firstboot: installed Flatpaks: org.videolan.VLC
+   firstboot: layered with rpm-ostree (live): cockpit
+   firstboot: source kernel kernel-surface staged in place of kernel 7.2.5-200.fc44.x86_64; it starts after the next reboot (removed with the target's kernel: kmod-v4l2loopback kmod-zfs v4l2loopback zfs)
+   firstboot: installed with the source kernel, active after the next reboot: iptsd libwacom-surface libwacom-surface-data (replacing libwacom libwacom-data)
+   firstboot: services enabled as on the old system: cockpit.socket
+   firstboot: updates now follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable (signature verified; active after the next reboot)
+   firstboot: layered with rpm-ostree (live): cockpit
+   firstboot: running the source kernel kernel-surface
+   firstboot: updates follow ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+== 17 passed, 0 failed
