@@ -1,0 +1,14 @@
+State: idle
+AutomaticUpdates: stage; rpm-ostreed-automatic.timer: inactive
+BootedDeployment:
+● ostree-image-signed:docker://ghcr.io/ublue-os/bluefin:stable
+                   Digest: sha256:23b7bf54349f1a93c2fea4168c7725a632641ee67ae29b0951ef1976c1ba2bc9
+                  Version: 44.20261013 (2026-10-13T01:49:54Z)
+      RemovedBasePackages: kernel-modules-core kernel-modules-extra kernel-core kernel kernel-modules kernel-devel-matched 7.2.5-200.fc44
+                           libwacom libwacom-data 2.19.0-1.fc44
+                           v4l2loopback kmod-v4l2loopback 0.15.4-1.fc44
+                           zfs kmod-zfs 2.4.4-1.fc44
+          LayeredPackages: cockpit iptsd kernel-surface kernel-surface-core
+                           kernel-surface-modules kernel-surface-modules-core
+                           kernel-surface-modules-extra libwacom-surface
+                           libwacom-surface-data
