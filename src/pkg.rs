@@ -654,6 +654,44 @@ fn walk_etc_diff(etc: &Path, usr_etc: &Path, inv: &mut Inventory) {
     }
 }
 
+/// Unversioned Conflicts/Obsoletes of installed packages: the packages each
+/// one replaces. Versioned ones (`foo < 2.0`) are left to the package
+/// manager, which knows the versions.
+pub fn rpm_replaces(names: &[String]) -> BTreeMap<String, Vec<String>> {
+    if names.is_empty() {
+        return BTreeMap::new();
+    }
+    let qf = "[%{=NAME}\\tc\\t%{CONFLICTNAME}\\t%{CONFLICTFLAGS}\\n][%{=NAME}\\to\\t%{OBSOLETENAME}\\t%{OBSOLETEFLAGS}\\n]";
+    let script = format!("rpm -q --qf '{qf}' \"$@\" 2>/dev/null; true");
+    let mut args = vec!["-c".to_string(), script, "plexy".to_string()];
+    args.extend(names.iter().cloned());
+    parse_replaces(&try_run("sh", &args).unwrap_or_default())
+}
+
+pub fn parse_replaces(out: &str) -> BTreeMap<String, Vec<String>> {
+    // RPMSENSE_LESS | RPMSENSE_GREATER | RPMSENSE_EQUAL
+    const VERSIONED: u64 = 2 | 4 | 8;
+    let mut m: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for line in out.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        let [pkg, _, cap, flags] = f[..] else {
+            continue;
+        };
+        let flags: u64 = flags.trim().parse().unwrap_or(VERSIONED);
+        let package_like = !cap.is_empty()
+            && cap
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.+".contains(c));
+        if flags & VERSIONED == 0 && package_like && cap != pkg {
+            let v = m.entry(pkg.to_string()).or_default();
+            if !v.iter().any(|x| x == cap) {
+                v.push(cap.to_string());
+            }
+        }
+    }
+    m
+}
+
 /// Files under /etc that no package owns. Called after the backend scan so the
 /// owned set is populated.
 pub fn find_unowned_etc(inv: &mut Inventory) {
@@ -716,6 +754,25 @@ pub fn find_unowned_etc(inv: &mut Inventory) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unversioned_conflicts_replace() {
+        let out = "libwacom-surface\tc\tlibwacom\t0\n\
+                   libwacom-surface-data\tc\tlibwacom-data\t0\n\
+                   kernel-surface\tc\tkernel-surface\t2\n\
+                   kernel-surface\to\tkernel-surface\t2\n\
+                   foo\tc\tbar\t2\n\
+                   foo\tc\t/usr/bin/x\t0\n\
+                   garbage line\n";
+        let m = parse_replaces(out);
+        assert_eq!(m.get("libwacom-surface").unwrap(), &vec!["libwacom"]);
+        assert_eq!(
+            m.get("libwacom-surface-data").unwrap(),
+            &vec!["libwacom-data"]
+        );
+        assert!(!m.contains_key("kernel-surface"));
+        assert!(!m.contains_key("foo"));
+    }
 
     #[test]
     fn sha256_known_vectors() {

@@ -21,6 +21,8 @@
 #                    (uupd --dry-run if present, else rpm-ostree upgrade --check)
 #   EXPECT_STARTUSER user whose systemd user manager is started as a login would
 #                    (headless guests: runs plexy's first-login stage)
+#   EXPECT_KERNEL    substring of the running kernel release (uname -r)
+#   EXPECT_RPMS      packages installed in the booted system (rpm -q)
 pass=0 fail=0
 ok() { pass=$((pass + 1)); printf 'PASS  %s\n' "$*"; }
 ko() { fail=$((fail + 1)); printf 'FAIL  %s\n' "$*"; }
@@ -55,6 +57,10 @@ for pk in $EXPECT_LAYERED; do
   # pending deployment until the next boot.
   chk "layered package $pk" sh -c "rpm-ostree status --json | python3 -c 'import json,sys; d=json.load(sys.stdin)[\"deployments\"][0]; sys.exit(0 if \"$pk\" in d.get(\"requested-packages\",[])+d.get(\"packages\",[]) else 1)'"
 done
+if [ -n "$EXPECT_KERNEL" ]; then
+  case "$(uname -r)" in *"$EXPECT_KERNEL"*) ok "kernel $(uname -r)" ;; *) ko "kernel $EXPECT_KERNEL (got $(uname -r))" ;; esac
+fi
+for r in $EXPECT_RPMS; do chk "package $r installed" rpm -q "$r"; done
 [ -f /var/lib/plexy/layer.log ] && sed 's/^/   layer: /' /var/lib/plexy/layer.log | tail -3
 if [ -n "$EXPECT_SESSION" ]; then
   # autologin: wait up to 2 min for the user's session on seat0

@@ -1553,12 +1553,26 @@ fn install_repos(m: &Manifest, plan: &Plan, deploy: &Path) -> Result<()> {
     }
     files.sort();
     files.dedup();
+    // The kept kernel's repository goes in with fallback URLs for other
+    // releases (see crate::kernel).
+    let kernel_repo = plan
+        .kernel
+        .as_ref()
+        .filter(|k| k.keep)
+        .and_then(|k| Some((k.repo_file.clone()?, k.repo_content.clone()?)));
     for f in files {
         let src = Path::new(&f);
         let dst = root_join(deploy, &f);
         // never overwrite what the image ships (its own repos and keys)
-        if src.is_file() && !dst.exists() && !util::dry_run() {
-            copy_preserving(src, &dst)?;
+        if !src.is_file() || dst.exists() || util::dry_run() {
+            continue;
+        }
+        match &kernel_repo {
+            Some((path, content)) if *path == f => {
+                copy_preserving(src, &dst)?;
+                write_file(&dst, content)?;
+            }
+            _ => copy_preserving(src, &dst)?,
         }
     }
     Ok(())

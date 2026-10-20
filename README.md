@@ -117,6 +117,63 @@ derived image so its first-boot units can run.
 `plexy update` explains the method on any migrated system. `--customize` needs a derived image, so
 it switches a `client` target to `image` layering.
 
+### Keeping your kernel (`--keep-kernel`)
+
+On an image-based system the kernel ships inside the image, so by default the target's own
+kernel replaces yours. If you run a kernel the target does not ship (linux-surface's
+`kernel-surface` on a Surface, a COPR kernel, ...), `--keep-kernel` (or `k` on the review screen)
+keeps it the way rpm-ostree changes a base image's kernel: an override that removes the target's
+stock kernel packages and installs yours from the repository it came from. rpm-ostree replays
+the override at every update and regenerates the initramfs on the machine.
+
+```console
+  kernel : this system runs kernel-surface 7.2.11-1.surface.fc44.x86_64 (from linux-surface); the target ships kernel 7.2.5-200.fc44.x86_64
+           kept: rpm-ostree override, replayed at every update
+           install  kernel-surface (7.2.11-1.surface.fc44)  kernel-surface-core  kernel-surface-modules  kernel-surface-modules-core  kernel-surface-modules-extra
+           with     iptsd  libwacom-surface  libwacom-surface-data
+           remove   kernel  kernel-core  kernel-devel-matched  kernel-modules  kernel-modules-core  kernel-modules-extra
+                    kmod-v4l2loopback  kmod-zfs  v4l2loopback  zfs
+warning: kmod-zfs is removed with the target's kernel: module built for the target's kernel 7.2.5-200.fc44.x86_64
+           not carried: surface-secureboot — enrolls a Secure Boot key with mokutil, ...
+```
+
+Nothing is hard-coded or pinned to versions:
+
+* **Your kernel's packages** are the ones tied to the running build: they ship files in its
+  module directory or require that exact build. Development files are left out. The target's own
+  kernel subpackages are mirrored under your kernel's name when the repository has them
+  (Bluefin ships `kernel-modules-extra`, so `kernel-surface-modules-extra` comes along).
+* **Its companions** are the hardware-support packages from the same repository: anything that
+  ships services, udev rules, modules or firmware, or that replaces a base package
+  (`libwacom-surface` replaces `libwacom`). They are layered in their own transaction, so a
+  companion the repository lacks for a release never holds back the kernel. Packages built for
+  package-managed boot entries (`kernel-surface-default-watchdog`) and Secure Boot key enrollers
+  (`surface-secureboot`, mokutil cannot run inside an rpm-ostree transaction) are not carried. A
+  key you already enrolled lives in the firmware and keeps working.
+* **What gets removed** is read from the target's own rpm database: its kernel packages, the
+  out-of-tree modules built for that kernel (Bluefin's `kmod-zfs`, `kmod-v4l2loopback`), and
+  whatever would lose a dependency your kernel does not provide (`zfs` needs `zfs-kmod`). The plan
+  lists these. On the migrated system the set is computed again from the booted deployment right
+  before the override, so it matches the image that was actually installed.
+* **Releases don't have to match.** Packages are installed by name, so every update takes the
+  newest build. The kernel's repository is written with fallback URLs: the target's own release
+  (`$releasever`) first, then neighbouring releases newest first. dnf and librepo move to the next
+  URL when one does not exist, so a target that gets a release ahead of the kernel's publisher
+  keeps resolving the kernel from the nearest release that has it, and switches to its own once
+  that is published. When the plan is made, the repository is queried exactly as the target will
+  see it, and the plan says which release's build will be used.
+
+The override needs rpm-ostree on top of the upstream image (registry `layering = "client"`, e.g.
+Bluefin, Aurora, Bazzite, Silverblue). With `--customize` or a derived-image target, put the
+kernel swap in the Containerfile yourself. A kernel that has the same package name as the target's
+but comes from a third-party repository (rpm-ostree cannot tell the two apart by name) and one
+installed from a local `.rpm` cannot be kept. The plan says so.
+
+Known limit: if a later target image adds a *new* package that requires its stock kernel (a newly
+named kmod), rpm-ostree refuses that update until you add it to the removals
+(`rpm-ostree override remove <pkg>`). The failed update changes nothing; you keep booting the
+current deployment.
+
 ### Target registry
 
 The OSes Plexy can migrate to, how each one updates, and which conversions are available from which
@@ -165,6 +222,7 @@ sudo plexy build                            # build derived + toolbox images
 sudo plexy apply --reboot                   # the destructive part (asks you to type 'migrate')
 
 sudo plexy migrate --target auto --mode hybrid --reboot   # all of the above
+sudo plexy migrate --target bluefin --mode hybrid --keep-kernel   # keep e.g. linux-surface's kernel
 
 # Vanilla OS (ABRoot) needs its own volumes:
 sudo plexy migrate --target vanilla --abroot-disk /dev/sdb        # dedicated disk (wiped)

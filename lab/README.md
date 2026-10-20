@@ -85,6 +85,18 @@ swap. The kernel OOM-killed a guest mid-migration and several desktop apps. So:
 | `silverblue-bluefin` | the Silverblue result of `fedora-silverblue` (already image-based) | `plexy switch --target bluefin` |
 | `debian-bluefin` | Debian 13 cloud + htop/nginx/tmux/neovim/ripgrep (prepare with `prep-debian.sh`) | `--target bluefin --mode hybrid` |
 | `fedora-rollback` | the migrated `fed1` | `plexy rollback` |
+| `ultramarine-surface` | `ultra1` at snapshot `loaded-surface`: booted into linux-surface's `kernel-surface`, with iptsd and libwacom-surface | `--target bluefin --mode hybrid --keep-kernel` |
+| `ultramarine-surface-reboot` | the result of `ultramarine-surface`: reboots into the staged override | (checks `kernel-surface` is running on Bluefin) |
+
+`loaded-surface` is made from `loaded`:
+
+```sh
+lab.sh revert ultra1 loaded && lab.sh start ultra1 && lab.sh wait ultra1
+lab.sh ssh ultra1 'bash -s' < lab/prep.d/ultramarine-surface.sh
+lab.sh ssh ultra1 'systemctl reboot'; sleep 30; lab.sh wait ultra1
+lab.sh ssh ultra1 'uname -r'          # *.surface.fc44.x86_64
+lab.sh stop ultra1 && lab.sh snapshot ultra1 loaded-surface
+```
 
 Firmware note: `EDK2` in Homebrew's QEMU and GNOME Boxes both work; the guests boot via the
 removable-media path on first boot and through the entry bootc/ABRoot creates afterwards.

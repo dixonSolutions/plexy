@@ -33,6 +33,9 @@ pub struct Manifest {
     pub accounts: Accounts,
     pub system: SystemSettings,
     pub wrappers: Wrappers,
+    /// The running kernel and its packages (dnf-managed sources).
+    #[serde(default)]
+    pub kernel: Option<crate::kernel::SourceKernel>,
 }
 
 impl Manifest {
@@ -71,6 +74,13 @@ pub fn scan() -> Result<Manifest> {
     let mut packages = pkg::scan(&os)?;
     pkg::find_unowned_etc(&mut packages);
     let repos = scan_repos(os.family);
+    let kernel = if os.family == Family::Fedora
+        && matches!(os.pkg_manager, os::PkgManager::Dnf5 | os::PkgManager::Dnf4)
+    {
+        crate::kernel::scan_source(&boot.kernel, &packages, &repos)
+    } else {
+        None
+    };
     let accounts = state::scan_accounts(root);
     let system = state::scan_system(root);
     let wrappers = state::scan_wrappers(&accounts);
@@ -85,13 +95,14 @@ pub fn scan() -> Result<Manifest> {
         accounts,
         system,
         wrappers,
+        kernel,
     })
 }
 
 /// Repositories that are not part of the base distribution (third-party,
 /// COPR, PPAs, ...) — these must exist in derived images and toolboxes for
 /// their packages to be installable.
-fn scan_repos(family: Family) -> Vec<RepoFile> {
+pub fn scan_repos(family: Family) -> Vec<RepoFile> {
     let mut out = vec![];
     let dirs: &[&str] = match family {
         Family::Fedora => &["/etc/yum.repos.d"],
